@@ -4,3 +4,7 @@ Release 0.1
 You can load any of these procedure sets by doing
 lua dofile("name.lua")
 in the administrative console.
+
+Alternatively, place the file in the server working directory,
+having named it init.lua, the server will read and load
+it at start.
