@@ -1,144 +1,112 @@
-local space = 51
-local default_version = 1
+--
+-- A system to store and serve notifications in a social network.
+-- Stores an association [user_id <-> list of notifications].
+--
+-- Each notification describes a recent event a user should get
+-- informed about, and is represented by a notifcation_id.
+--
+-- Notification id is a fixed length string.
+--
+-- Notifications can belong to different types (photo evaluations,
+-- unread messages, friend requests).
+--
+-- For each type, a FIFO queue of last fifo_max notifications
+-- is maintained, as well as the count of "unread" notifications.
+--
+-- The number of notification types can change.
+--
+-- The following storage schema is used:
+--
+-- space:
+--        user_id total_unread type1_unread_count type1_fifo
+--                             type2_unread_count type2_fifo
+--                             type3_unread_count type3_fifo
+--                             ....
+-- Supported operations include:
+--
+-- notification_add(user_id, fifo_no, notification_id)
+-- - pushes a notification into the fifo queue associated with the
+--   type, incrementing the count of unread notifications associated
+--   with the given fifo, as well as the total count
+--   However, if unread_count is above fifo_max, counters
+--   are not incremented
+--
+-- notification_read(user_id, fifo_no)
+-- - read the notifications in the given fifo.
+--   This substracts the fifo unread_count from the total
+--   unread_count, and drops the fifo unread_count to 0.
+--
+-- notification_total_unread_count(user_id)
+-- - gets the total unread count
+--
 
-local typ_max = 5
-local total_offset = 2
-local counter_offset = 3
-local notify_offset = counter_offset + typ_max
-local notify_max_count = 20
+-- namespace which stores all notifications
+local space_no = 0
+-- current total number of different notification types
+local type_max = 5
+-- how many notifications of each type the associated
+-- FIFO keeps
+local fifo_max = 20 
+-- field index of the first fifo in the typle.
+-- field 0 - user id, field 1 - total unread count, hence
+local fifo0_fieldno = 2
 
-local function to_table(t, typ, notify)
-       local packed = t[notify_offset + typ]
-       local r = {}
-       if packed == "" then
-               return r
-       end
-       local insert, sub, len = table.insert, string.sub, #notify
-       for i = 1, # packed / len do
-               local j = 1 + (i - 1) * len
-               insert(r, sub(packed, j, j))
-       end
-       return r
-end
-local from_table = table.concat
-
-local function inc(typ, v)
-       if not v then
-               v = 1
-       end
-       return { ['op'] = '+p',
-                ['data'] = {counter_offset + typ, v} }
-end
-
-local function inc_total(v)
-       if not v then
-               v = 1
-       end
-       return { ['op'] = '+p',
-                ['data'] = {total_offset, v} }
-end
-
--- TODO: use splice
-local function move(typ, arr, i)
-       table.insert(arr, 1, table.remove(arr, i))
-       return { ['op'] = '=p',
-                ['data'] = { notify_offset + typ, from_table(arr) }
-        } 
-end
-
-local function remove_tail(typ, arr)
-       table.remove(arr)
-end
-
-local function insert(typ, arr, notify)
-       table.insert(arr, notify)
-       return { ['op'] = '=p',
-                ['data'] = { notify_offset + typ, from_table(arr) } 
-        }
-end
-
-local function notify_insert_op(t, typ, notify)
-       local arr = to_table(t, typ, notify)
-       local count = box.unpack('i', (t[typ + counter_offset + 1]))
-
-       for i, v in ipairs(arr) do
-               if v == notify then
-                       if count < i then
-                               return move(typ, arr, i)
-                       else
-                               return inc_total(), inc(typ), move(typ, arr, i)
-                       end
-               end
-       end
-
-       if #arr == notify_max_count then
-               remove_tail(typ, arr) -- NB: this should be op
-               return insert(typ, arr, notify)
-       else
-               return inc_total(), inc(typ), insert(typ, arr, notify)
-       end
+-- Find the tuple associated with user id or create a new
+-- one.
+function notification_find_or_insert(user_id)
+    tuple = box.select(space_no, 0, user_id)
+    if tuple ~= nil then
+        return tuple
+    end
+    -- create an empty fifo for each notification type
+    fifos = {}
+    for i = 1, type_max do
+        table.insert(fifos, 0) -- unread count - 0
+        table.insert(fifos, "") -- notification list - empty
+    end
+    box.insert(space_no, user_id, 0, unpack(fifos))
+    -- we can't use the tuple returned by box.insert, since it could
+    -- have changed since.
+    return box.select(space_no, 0, user_id)
 end
 
-local function get_tuple(user_id)
-       local t = box.select(space, 0, user_id)
-       if not t then
-               t = { user_id, default_version,
-                     0, 0, 0, 0, 0, 0,
-                     "", "", "", "", "" }
-               pcall(box.insert, space, unpack(t))
-               t = box.select(space, 0, user_id)
-       end
-       return t
+function notification_total_unread_count(user_id)
+    return box.unpack('i', notification_find_or_insert(user_id)[1])
 end
 
-local function glue_ops(ops)
-       local op, data = {}, {}
-
-       for i, v in ipairs(ops) do
-               table.insert(op, v.op)
-               for j, k in ipairs(v.data) do
-                       table.insert(data, k)
-               end
-       end
-       return table.concat(op), unpack(data)
+function notification_unread_count(user_id, fifo_no)
+    -- calculate the field no of the associated fifo
+    fieldno = fifo0_fieldno + tonumber(fifo_no) * 2
+    return box.unpack('i', notification_find_or_insert(user_id)[fieldno])
+end
+--
+-- Append a notification to its fifo (one fifo per notification type)
+-- Update 'unread' counters, unless they are already at their max.
+--
+function notification_push(user_id, fifo_no, id)
+    fieldno = fifo0_fieldno + tonumber(fifo_no) * 2
+    -- insert the new id at the beginning of fifo, truncate the tail
+    -- use box SPLICE operation for that
+    format = ":p:p"
+    args = { fieldno + 1, box.pack("ppp", 0, 0, id),
+             fieldno + 1, box.pack("ppp", fifo_max * #id, #id, "") }
+    -- check if the counters need to be updated
+    unread_count = notification_unread_count(user_id, fifo_no)
+    if unread_count < fifo_max then
+    -- prepend ++total_unread_count, ++unread_count to our update operation
+        format = "+p+p"..format
+        args1 = args
+        args = { 1, 1, fieldno, 1 }
+        for _, v in ipairs(args1) do table.insert(args, v) end
+    end
+    return box.update(space_no, user_id, format, unpack(args))
 end
 
+-- read notifications
 
-local function args(user_id, typ)
-       user_id, typ = tonumber(user_id), tonumber(typ)
-
-       if not user_id then
-               error("bad user_id")
-       end
-       if not typ or typ < 0 or typ > typ_max then
-               error("bad type")
-       end
-
-       if not notify or #notify == 0 then
-               error("bad notify")
-       end
-
-       return user_id, typ
-end
-
-function box.notify_insert(user_id, typ, notify)
-       user_id, typ = check(user_id, typ)
-
-       local t = get_tuple(user_id)
-       local ops = {notify_insert_op(t, typ, notify)}
-       box.update(space, user_id, glue_ops(ops))
-
-       return box.select(space, 0, user_id)
-end
-
-function box.notify_get(user_id, typ)
-       user_id, typ = check(user_id, typ)
-
-       local t = get_tuple(user_id)
-       local total, count = box.unpack('i', t[counter_offset]), box.unpack('i', t[typ + counter_offset + 1])
-
-       local ops = {inc(typ, -count), inc(total, -count) }
-       box.update(space, user_id, glue_ops(ops))
-
-       return t[notify_offset + typ]
+function notification_read(user_id, fifo_no)
+    unread_count = notification_unread_count(user_id, fifo_no)
+    fieldno = fifo0_fieldno + tonumber(fifo_no) * 2
+    return box.update(space_no, user_id, "+p+p",
+                      1, -unread_count, fieldno, -unread_count)[fieldno+1]
 end
