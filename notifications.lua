@@ -58,7 +58,7 @@ local type_max = 5
 -- how many notifications of each type the associated
 -- FIFO keeps
 local fifo_max = 20
--- field index of the first fifo in the typle.
+-- field index of the first fifo in the tuple.
 -- field 0 - user id, field 1 - total unread count, hence
 local fifo0_fieldno = 2
 
