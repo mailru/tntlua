@@ -24,12 +24,13 @@
 --                             ....
 -- Supported operations include:
 --
--- notification_add(user_id, fifo_no, notification_id)
+-- notification_push(user_id, fifo_no, notification_id)
 -- - pushes a notification into the fifo queue associated with the
 --   type, unless it's already there, incrementing the count of unread
 --   notifications associated  with the given fifo, as well as the total
 --   count. However, if unread_count is above fifo_max, counters
 --   are not incremented.
+--   fifo_no is indexed from 0 to fifo_max - 1
 --
 -- notification_read(user_id, fifo_no)
 -- - read the notifications in the given fifo.
