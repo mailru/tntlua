@@ -52,8 +52,9 @@ function profile_find_attribute(tuple, pref_id)
 end
 
 --
--- Append a notification to its fifo (one fifo per notification type)
--- Update 'unread' counters, unless they are already at their max.
+-- Update a preference, given its id. If it's being set for the first
+-- time, simply append both pref_id and pref_value to the list of
+-- preferences.
 --
 function profile_set(user_id, pref_id, pref_value)
     --
