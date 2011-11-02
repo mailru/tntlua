@@ -78,29 +78,29 @@ function profile_multiset(user_id, ...)
     end
 
     if pref_list_len == 0 then
-        --- nothing to set, returns old tuple (if it exists)
+        --- nothing to set, return the old tuple (if it exists)
         return box.select(space_no, 0, user_id)
     end
 
     local old_tuple = profile_find_or_insert(user_id)
     local new_tuple = { old_tuple:unpack() }
 
-    -- initialize iterator by pref argument list, all arguments goes by pair
+    -- initialize iterator by pref argument list, all arguments go by pair
     -- id and value.
     local itr, pref_id = next(pref_list)
     local itr, pref_value = next(pref_list, itr)
     while pref_id ~= nil and pref_value ~= nil do
         pref_fieldno = profile_find_attribute(old_tuple, pref_id)
         if pref_fieldno ~= nil then
-            -- this entry exist, update old entry
+            -- this entry exists, update the old entry
             new_tuple[pref_fieldno + 1] = pref_value
         else
-            -- this is new entry, append it to end of tuple
+            -- this is a new entry, append it to the end of the tuple
             table.insert(new_tuple, pref_id)
             table.insert(new_tuple, pref_value)
         end
 
-        -- go to next pair
+        -- go to the next pair
         itr, pref_id = next(pref_list, itr)
         itr, pref_value = next(pref_list, itr)
     end
