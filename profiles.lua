@@ -57,7 +57,6 @@ end
 -- preferences.
 --
 function profile_set(user_id, pref_id, pref_value)
-    --
     tuple = profile_find_or_insert(user_id)
     pref_fieldno = profile_find_attribute(tuple, pref_id)
     if pref_fieldno ~= nil then
@@ -68,6 +67,45 @@ function profile_set(user_id, pref_id, pref_value)
         table.insert(tuple, pref_value)
         return box.replace(space_no, unpack(tuple))
     end
+end
+
+function profile_multiset(user_id, ...)
+    local pref_list = {...}
+    local pref_list_len = table.getn(pref_list)
+
+    if pref_list_len % 2 ~= 0 then
+        error("illegal parameters: var arguments list should contain pairs pref_id pref_value")
+    end
+
+    if pref_list_len == 0 then
+        --- nothing to set, returns old tuple (if it exists)
+        return box.select(space_no, 0, user_id)
+    end
+
+    local old_tuple = profile_find_or_insert(user_id)
+    local new_tuple = { old_tuple:unpack() }
+
+    -- initialize iterator by pref argument list, all arguments goes by pair
+    -- id and value.
+    local itr, pref_id = next(pref_list)
+    local itr, pref_value = next(pref_list, itr)
+    while pref_id ~= nil and pref_value ~= nil do
+        pref_fieldno = profile_find_attribute(old_tuple, pref_id)
+        if pref_fieldno ~= nil then
+            -- this entry exist, update old entry
+            new_tuple[pref_fieldno + 1] = pref_value
+        else
+            -- this is new entry, append it to end of tuple
+            table.insert(new_tuple, pref_id)
+            table.insert(new_tuple, pref_value)
+        end
+
+        -- go to next pair
+        itr, pref_id = next(pref_list, itr)
+        itr, pref_value = next(pref_list, itr)
+    end
+
+    return box.replace(space_no, unpack(new_tuple))
 end
 
 function profile_get(user_id)
