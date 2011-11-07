@@ -1,6 +1,6 @@
-fifomax = 50
+local fifomax = 50
 function find_or_create_fifo(name)
-    fifo = box.select(0, 0, name)
+    local fifo = box.select(0, 0, name)
     if fifo == nil then
         fifo = {}
         for i = 1, fifomax do fifo[i] = 0 end
@@ -9,9 +9,9 @@ function find_or_create_fifo(name)
     return fifo
 end
 function fifo_push(name, val)
-    fifo = find_or_create_fifo(name)
-    top = box.unpack('i', fifo[1])
-    bottom = box.unpack('i', fifo[2])
+    local fifo = find_or_create_fifo(name)
+    local top = box.unpack('i', fifo[1])
+    local bottom = box.unpack('i', fifo[2])
     if top == fifomax+2 then -- % size
         top = 3
     elseif top ~= bottom then -- was not empty
@@ -25,7 +25,7 @@ function fifo_push(name, val)
     return box.update(0, name, '=p=p=p', 1, top, 2, bottom, top, val)
 end
 function fifo_top(name)
-    fifo = find_or_create_fifo(name)
-    top = box.unpack('i', fifo[1])
+    local fifo = find_or_create_fifo(name)
+    local top = box.unpack('i', fifo[1])
     return box.unpack('i', fifo[top])
 end

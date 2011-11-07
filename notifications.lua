@@ -66,12 +66,12 @@ local fifo0_fieldno = 2
 -- Find the tuple associated with user id or create a new
 -- one.
 function notification_find_or_insert(user_id)
-    tuple = box.select(space_no, 0, user_id)
+    local tuple = box.select(space_no, 0, user_id)
     if tuple ~= nil then
         return tuple
     end
     -- create an empty fifo for each notification type
-    fifos = {}
+    local fifos = {}
     for i = 1, type_max do
         table.insert(fifos, 0) -- unread count - 0
         table.insert(fifos, "") -- notification list - empty
@@ -88,7 +88,7 @@ end
 
 function notification_unread_count(user_id, fifo_no)
     -- calculate the field no of the associated fifo
-    fieldno = fifo0_fieldno + tonumber(fifo_no) * 2
+    local fieldno = fifo0_fieldno + tonumber(fifo_no) * 2
     return box.unpack('i', notification_find_or_insert(user_id)[fieldno])
 end
 

@@ -25,7 +25,7 @@ local space_no = 0
 -- Find the tuple associated with user id or create a new
 -- one.
 function profile_find_or_insert(user_id)
-    tuple = box.select(space_no, 0, user_id)
+    local tuple = box.select(space_no, 0, user_id)
     if tuple ~= nil then
         return tuple
     end
@@ -36,8 +36,8 @@ function profile_find_or_insert(user_id)
 end
 
 function profile_find_attribute(tuple, pref_id)
-    i = 2
-    k, v = tuple:next() -- skip user id
+    local i = 2
+    local k, v = tuple:next() -- skip user id
     while k ~= nil do
         k, v = tuple:next(k)
         if k ~= nil then
@@ -57,8 +57,8 @@ end
 -- preferences.
 --
 function profile_set(user_id, pref_id, pref_value)
-    tuple = profile_find_or_insert(user_id)
-    pref_fieldno = profile_find_attribute(tuple, pref_id)
+    local tuple = profile_find_or_insert(user_id)
+    local pref_fieldno = profile_find_attribute(tuple, pref_id)
     if pref_fieldno ~= nil then
         return box.update(space_no, user_id, "=p", pref_fieldno, pref_value)
     else
