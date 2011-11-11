@@ -54,10 +54,11 @@
 
 -- namespace which stores all notifications
 local space_no = 0
--- current total number of different notification types
-local type_max = 5
+-- description of notification types
+-- these ids describe notification id tail offset used by is_duplicate()
+local notification_types = { 0, 0, 4, 0, 0 }
 -- how many notifications of each type the associated
--- FIFO keeps
+-- circular buffer keeps
 local ring_max = 20
 -- field index of the first ring in the tuple.
 -- field 0 - user id, field 1 - total unread count, hence
@@ -72,7 +73,7 @@ function notification_find_or_insert(user_id)
     end
     -- create an empty ring for each notification type
     local rings = {}
-    for i = 1, type_max do
+    for i = 1, #notification_types do
         table.insert(rings, 0) -- unread count - 0
         table.insert(rings, "") -- notification list - empty
     end
@@ -97,16 +98,19 @@ end
 -- return true and id offset when found,
 -- false len(ring) when not found
 --
-local function is_duplicate(ring, id)
-    for i=1, #ring, #id do
-        if string.sub(ring, i, i+#id-1) == id then
+local function is_duplicate(ring, id, tail_offset)
+    id_len = #id
+    id = string.sub(id, 1, id_len - tail_offset)
+    for i=1, #ring, id_len do
+        n_id = string.sub(ring, i, i+id_len-1 - tail_offset)
+        if  n_id == id then
             -- we're going to insert a new notifiation,
             -- return the old notification offset relative to
             -- the new field size
-            return true, i - 1 + #id
+            return true, i - 1 + id_len
         end
     end
-    return false, ring_max * #id
+    return false, ring_max * id_len
 end
 
 --
@@ -123,7 +127,8 @@ function notification_push(user_id, ring_no, id)
     -- check whether a duplicate id is already present
     --
     local tuple = notification_find_or_insert(user_id)
-    local _, dup_offset = is_duplicate(tuple[fieldno+1], id)
+    local _, dup_offset = is_duplicate(tuple[fieldno+1], id,
+                                       notification_types[ring_no+1])
     --
     -- if duplicate is there, dup_offset points at it.
     -- otherwise it points at ring tail
