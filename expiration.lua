@@ -75,7 +75,7 @@ local function is_tuple_expired(task, tuple)
 	return true
     end
 
-    local current_time = box.ev_now()
+    local current_time = os.time()
     local tuple_expire_time = box.unpack("i", field)
     return current_time >= tuple_expire_time
 end
@@ -176,7 +176,7 @@ local task_list = {}
 local function create_task(name)
     local task = {}
     task.name = name
-    task.start_time = box.ev_now()
+    task.start_time = os.time()
     task.guardian_fiber = nil
     task.worker_fiber = nil
     task.expiration_space_no = nil
@@ -343,7 +343,7 @@ function expiration_show_task_list(print_head)
 	      task.expiration_space_no .. "\t" ..
 	      task.cemetery_space_no .. "\t" ..
 	      task.tuples_expired .. "\t" ..
-	      math.floor(box.ev_now() - task.start_time))
+	      math.floor(os.time() - task.start_time))
     end
 end
 
@@ -351,7 +351,7 @@ function expiration_task_details(name)
     local task = get_task(name)
     print("name: ", task.name)
     print("start time: ", math.floor(task.start_time))
-    print("working time: ", math.floor(box.ev_now() - task.start_time))
+    print("working time: ", math.floor(os.time() - task.start_time))
     print("expiration space number: ", task.expiration_space_no)
     print("expiration field: ", task.expiration_field_no)
     print("cemetery space  number: ", task.cemetery_space_no)
@@ -373,7 +373,7 @@ _expiration_debug = false
 
 local function get_cookie(uid)
     local cookie = ""
-    math.randomseed(box.ev_now() + uid)
+    math.randomseed(os.time() + uid)
     for i = 1, 4 do
 	cookie = cookie .. math.random(1, 1000000)
     end
@@ -411,7 +411,7 @@ function expiration_put_test_tuples(space_no, total)
 	error("expiration module debug disabled")
     end
 
-    local time = math.floor(box.ev_now())
+    local time = math.floor(os.time())
     for i = 0, total do
 	add_entry(space_no, i, get_email(i), time + i, get_cookie(i))
     end
