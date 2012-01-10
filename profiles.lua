@@ -18,96 +18,162 @@
 -- profile_set(user_id, pref_id, pref_value)
 -- - sets a given preference.
 --
+-- profile_multiset(profile_id, ...)
+-- - sets a given variable number of preferences.
+--
 
 -- namespace which stores all notifications
 local space_no = 0
 
--- Find the tuple associated with user id or create a new
--- one.
-function profile_find_or_insert(user_id)
-    local tuple = box.select(space_no, 0, user_id)
+
+-- ========================================================================= --
+-- Profile local functions
+-- ========================================================================= --
+
+local function print_profile(header, profile)
+    if not profiles._debug then
+	return
+    end
+    print(header)
+    print("id = ", profile.id)
+    for pref_id, pref_value in pairs(profile.prefs) do
+	print("prefs[", pref_id, "] = ", pref_value)
+    end
+end
+
+local function load_profile(profile_id)
+    -- init empty profile
+    local profile = {}
+    profile.id = profile_id
+    profile.prefs = {}
+
+    -- try to find tuple
+    local tuple = box.select(space_no, 0, profile_id)
     if tuple ~= nil then
-        return tuple
+	-- tuple exists, fill preference list
+	local k, _ = tuple:next() -- skip user id
+	while k ~= nil do
+	    local pref_key, pref_value
+	    -- get preference key
+	    k, pref_key = tuple:next(k)
+	    if k == nil then
+		break
+	    end
+	    pref_key = box.unpack("i", pref_key)
+	    -- get preference value
+	    k, pref_value = tuple:next(k)
+	    if k == nil then
+		break
+	    end
+	    pref_value = box.unpack("i", pref_value)
+	    -- put preference
+	    profile.prefs[pref_key] = pref_value
+	end
     end
-    box.insert(space_no, user_id)
-    -- we can't use the tuple returned by box.insert, since it could
-    -- have changed since.
-    return box.select(space_no, 0, user_id)
+
+    print_profile("load", profile)
+    return profile
 end
 
-function profile_find_attribute(tuple, pref_id)
-    local i = 2
-    local k, v = tuple:next() -- skip user id
-    while k ~= nil do
-        k, v = tuple:next(k)
-        if k ~= nil then
-            if v == pref_id then
-                return i
-            end
-            k, v = tuple:next(k)
-            i = i + 2
-        end
+local function store_profile(profile)
+    print_profile("store", profile)
+    -- init profile tuple
+    local tuple = { profile.id }
+    -- put preference to tuple
+    for pref_id, pref_value in pairs(profile.prefs) do
+	-- insert preference id
+	table.insert(tuple, pref_id)
+	-- insert preference value
+	table.insert(tuple, pref_value)
     end
-    return nil
+    return box.replace(space_no, unpack(tuple))
 end
 
---
--- Update a preference, given its id. If it's being set for the first
--- time, simply append both pref_id and pref_value to the list of
--- preferences.
---
-function profile_set(user_id, pref_id, pref_value)
-    local tuple = profile_find_or_insert(user_id)
-    local pref_fieldno = profile_find_attribute(tuple, pref_id)
-    if pref_fieldno ~= nil then
-        return box.update(space_no, user_id, "=p", pref_fieldno, pref_value)
-    else
-        tuple = {tuple:unpack()}
-        table.insert(tuple, pref_id)
-        table.insert(tuple, pref_value)
-        return box.replace(space_no, unpack(tuple))
-    end
+
+-- ========================================================================= --
+-- Profile interface
+-- ========================================================================= --
+
+profiles = {
+    -- enable/disable debug functions
+    _debug = true,
+}
+
+function profile_get(profile_id)
+    return box.select(space_no, 0, profile_id)
 end
 
-function profile_multiset(user_id, ...)
+function profile_set(profile_id, pref_key, pref_value)
+    --
+    -- check input params
+    --
+
+    -- profile id
+    if profile_id == nil then
+	error("profile's id undefied")
+    end
+    -- preference key
+    if pref_key == nil then
+	error("preference key undefined")
+    end
+    -- preference value
+    if pref_value == nil then
+	error("preference value undefined")
+    end
+
+    --
+    -- process
+    --
+
+    -- load profile
+    local profile = load_profile(profile_id)
+    -- set preference
+    profile.prefs[pref_key] = pref_value
+    -- store result
+    return store_profile(profile)
+end
+
+function profile_multiset(profile_id, ...)
     local pref_list = {...}
     local pref_list_len = table.getn(pref_list)
 
-    if pref_list_len % 2 ~= 0 then
-        error("illegal parameters: var arguments list should contain pairs pref_id pref_value")
-    end
+    --
+    -- check input params
+    --
 
+    -- profile id
+    if profile_id == nil then
+	error("profile's id undefied")
+    end
+    -- preference list's length
     if pref_list_len == 0 then
         --- nothing to set, return the old tuple (if it exists)
-        return box.select(space_no, 0, user_id)
+        return box.select(space_no, 0, profile_id)
+    end
+    -- preference list's parity
+    if pref_list_len % 2 ~= 0 then
+        error("illegal parameters: var arguments list should contain pairs pref_key pref_value")
     end
 
-    local old_tuple = profile_find_or_insert(user_id)
-    local new_tuple = { old_tuple:unpack() }
+    --
+    -- process
+    --
+
+    -- load profile
+    local profile = load_profile(profile_id)
 
     -- initialize iterator by pref argument list, all arguments go by pair
     -- id and value.
-    local itr, pref_id = next(pref_list)
-    local itr, pref_value = next(pref_list, itr)
-    while pref_id ~= nil and pref_value ~= nil do
-        pref_fieldno = profile_find_attribute(old_tuple, pref_id)
-        if pref_fieldno ~= nil then
-            -- this entry exists, update the old entry
-            new_tuple[pref_fieldno + 1] = pref_value
-        else
-            -- this is a new entry, append it to the end of the tuple
-            table.insert(new_tuple, pref_id)
-            table.insert(new_tuple, pref_value)
-        end
-
+    local i, pref_key = next(pref_list)
+    local i, pref_value = next(pref_list, i)
+    while pref_key ~= nil and pref_value ~= nil do
+	-- set new preference value
+	profile.prefs[pref_key] = pref_value
         -- go to the next pair
-        itr, pref_id = next(pref_list, itr)
-        itr, pref_value = next(pref_list, itr)
+        i, pref_key = next(pref_list, i)
+        i, pref_value = next(pref_list, i)
     end
 
-    return box.replace(space_no, unpack(new_tuple))
-end
-
-function profile_get(user_id)
-    return box.select(space_no, 0, user_id)
+    -- store result
+    return store_profile(profile)
 end
