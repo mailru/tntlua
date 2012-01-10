@@ -1,3 +1,12 @@
+-- ========================================================================= --
+-- Tarantool/box expiration daemon
+--
+-- Daemon's managements functions:
+--   - exprd.run_task -- run new expiration task
+--   - exprd.kill_task -- kill running task
+--   - exprd.show_tasks_list -- print tasks list
+--   - exprd.show_task_details -- show task detail
+-- ========================================================================= --
 
 -- ========================================================================= --
 -- local support functions
