@@ -83,7 +83,9 @@ local function worker_loop()
 		box.delete(task.space_no, key)
 		task.tuples_expired = task.tuples_expired + 1
 		-- process expired tuple
-		task.process_expired_tuple(task.args, tuple)
+                if task.process_expired_tuple ~= nil then
+                    task.process_expired_tuple(task.args, tuple)
+                end
 	    end
 
 	    -- check, can worker go to sleep
