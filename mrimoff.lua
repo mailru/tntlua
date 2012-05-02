@@ -5,14 +5,18 @@
 --
 
 --
--- index0 - msgid (TREE, unique)
--- index1 - { userid, msgid } (TREE, unique)
+-- index0 - { userid, msgid } (TREE, unique)
 --
 
-local function get_key_cardinality(index_no, ...)
+local function get_key_cardinality_and_max_msgid(index_no, ...)
 	local key = ...
 	-- TODO: optimize (replace by calculation cardinality of a key in the index)
-	return #{ box.select(0, index_no, key) }
+	local data = { box.select(0, index_no, key) }
+	local n = #data
+	if n == 0 then
+		return 0, 0
+	end
+	return n, box.unpack('i', data[n][1])
 end
 
 --
@@ -26,22 +30,16 @@ function mrim_add(userid, msg)
 	userid = box.unpack('i', userid)
 
 	local limit = 1000
-	local n_msgs = get_key_cardinality(1, userid)
+	local n_msgs, max_msgid = get_key_cardinality_and_max_msgid(0, userid)
 
 	if n_msgs >= limit then
-		return { box.pack('i', n_msgs), box.pack('l', tonumber64(0)) }
+		return { box.pack('i', n_msgs), box.pack('i', 0) }
 	end
 
-	local max_tu = box.space[0].index[0]:max()
-	local msgid = nil
-	if max_tu ~= nil then
-		msgid = box.unpack('l', max_tu[0]) + 1
-	else
-		msgid = tonumber64(1)
-	end
-	box.insert(0, msgid, userid, msg)
+	local msgid = max_msgid + 1
+	box.insert(0, userid, msgid, msg)
 
-	return { box.pack('i', n_msgs + 1), box.pack('l', msgid) }
+	return { box.pack('i', n_msgs + 1), box.pack('i', msgid) }
 end
 
 --
@@ -50,9 +48,10 @@ end
 --
 function mrim_del(userid, msgid)
 	-- client sends integers encoded as BER-strings
-	msgid = box.unpack('l', msgid)
+	userid = box.unpack('i', userid)
+	msgid = box.unpack('i', msgid)
 
-	local del = box.delete(0, msgid)
+	local del = box.delete(0, userid, msgid)
 	if del ~= nil then
 		return box.pack('i', 1)
 	end
@@ -67,9 +66,9 @@ function mrim_del_all(userid)
 	-- client sends integers encoded as BER-strings
 	userid = box.unpack('i', userid)
 
-	local msgs = { box.select(0, 1, userid) }
+	local msgs = { box.select(0, 0, userid) }
 	for _, msg in ipairs(msgs) do
-		box.delete(0, msg[0])
+		box.delete(0, msg[0], msg[1])
 	end
 
 	return box.pack('i', #msgs)
@@ -86,7 +85,8 @@ function mrim_get(userid, limit)
 	userid = box.unpack('i', userid)
 	limit = box.unpack('i', limit)
 
-	local n_msgs = get_key_cardinality(1, userid)
+	-- TODO: use one select request for calculation of n_msgs and getting no more then @limit msgs
+	local n_msgs, _ = get_key_cardinality_and_max_msgid(0, userid)
 
-	return box.pack('i', n_msgs), box.select_limit(0, 1, 0, limit, userid)
+	return box.pack('i', n_msgs), box.select_limit(0, 0, 0, limit, userid)
 end
