@@ -2,10 +2,10 @@
 -- Tarantool/box expiration daemon
 --
 -- Daemon's managements functions:
---   - expirationd.run_task -- run new expiration task
---   - expirationd.kill_task -- kill running task
---   - expirationd.show_tasks_list -- print tasks list
---   - expirationd.show_task_details -- show task detail
+--   - expirationd.run_task       -- run new expiration task
+--   - expirationd.kill_task      -- kill running task
+--   - expirationd.show_task_list -- print task list
+--   - expirationd.task_details   -- show task detail
 -- ========================================================================= --
 
 -- ========================================================================= --
@@ -359,15 +359,15 @@ function expirationd.task_details(name)
     print("working time: ", math.floor(os.time() - task.start_time))
     print("space: ", task.space_no)
     print("is_tuple_expired handler: ", task.is_tuple_expired)
-    print("process_expired_tuple hander: ", task.process_expired_tuple)
+    print("process_expired_tuple handler: ", task.process_expired_tuple)
     print("args:")
     for i, v in pairs(task.args) do
 	print("  ", i, ": ", v)
     end
     print("tuples per iteration: ", task.tuples_per_iter)
     print("full index scann time: ", task.full_scann_time)
-    print("tuples expited: ", task.tuples_expired)
-    print("restars: ", task.restarts)
+    print("tuples expired: ", task.tuples_expired)
+    print("restarts: ", task.restarts)
     print("guardian fid: ", get_fid(task.guardian_fiber))
     print("worker fid: ", get_fid(task.worker_fiber))
 end
