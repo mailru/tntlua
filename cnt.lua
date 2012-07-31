@@ -23,7 +23,7 @@ function cnt_inc(space, ...)
         if tuple ~= nil then break end
     end
 
-    return tuple[cnt_index]
+    return box.unpack('i', tuple[cnt_index])
 end
 
 --
@@ -37,11 +37,11 @@ function cnt_dec(space, ...)
 
     local tuple = box.select(space, 0, ...)
     if tuple == nil then return 0 end
-    if tuple[cnt_index] == 1 then
+    if box.unpack('i', tuple[cnt_index]) == 1 then
         box.delete(space, ...)
         return 0
     else
         tuple = box.update(space, key, '-p', cnt_index, 1)
-        return tuple[cnt_index]
+        return box.unpack('i', tuple[cnt_index])
     end
 end
