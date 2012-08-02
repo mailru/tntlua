@@ -4,12 +4,14 @@
 -- Simple counter.
 --
 
+box.counter = {}
+
 --
 -- Increment counter identified by primary key.
 -- Create counter if not exists.
 -- Returns updated value of the counter.
 --
-function cnt_inc(space, ...)
+function box.counter.inc(space, ...)
     local key = {...}
     local cnt_index = #key
 
@@ -31,7 +33,7 @@ end
 -- Delete counter if it decreased to zero.
 -- Returns updated value of the counter.
 --
-function cnt_dec(space, ...)
+function box.counter.dec(space, ...)
     local key = {...}
     local cnt_index = #key
 
