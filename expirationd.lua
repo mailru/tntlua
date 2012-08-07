@@ -95,8 +95,8 @@ local function worker_loop()
                     local delay = (task.tuples_per_iter * task.full_scann_time)
                         / scann_space:len()
 
-                    if delay > expirationd.constatns.max_delay then
-                        delay = expirationd.constatns.max_delay
+                    if delay > expirationd.constants.max_delay then
+                        delay = expirationd.constants.max_delay
                     end
                     box.fiber.sleep(delay)
                 end
@@ -105,10 +105,10 @@ local function worker_loop()
 
         if scann_space:len() == 0 then
             -- space is empty, nothig to do
-            box.fiber.sleep(expirationd.constatns.max_delay)
+            box.fiber.sleep(expirationd.constants.max_delay)
         elseif task.tuples_per_iter > scann_space:len() then
             -- space is empty, nothig to do
-            box.fiber.sleep(expirationd.constatns.max_delay)
+            box.fiber.sleep(expirationd.constants.max_delay)
         end
     end
 end
@@ -134,7 +134,7 @@ local function guardian_loop()
             task.worker_fiber = box.fiber.create(worker_loop)
             result = box.fiber.resume(task.worker_fiber)
         end
-        box.fiber.sleep(expirationd.constatns.check_interval)
+        box.fiber.sleep(expirationd.constants.check_interval)
     end
 end
 
@@ -159,8 +159,8 @@ local function create_task(name)
     task.is_tuple_expired = nil
     task.process_expired_tuple = nil
     task.args = nil
-    task.tuples_per_iter = expirationd.constatns.default_tuples_per_iter
-    task.full_scann_time = expirationd.constatns.default_full_scann_time
+    task.tuples_per_iter = expirationd.constants.default_tuples_per_iter
+    task.full_scann_time = expirationd.constants.default_full_scann_time
     return task
 end
 
@@ -209,7 +209,7 @@ expirationd = {
     -- enable/disable debug functions
     _debug = false,
     -- constants
-    constatns = finalize_table(
+    constants = finalize_table(
         {
             -- default value of number of tuples will be checked by one itaration
             default_tuples_per_iter = 1024,
