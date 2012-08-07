@@ -72,27 +72,21 @@ local function worker_loop()
     while true do
         local checks = 0
 
-        -- full index scann loop
+        -- full index scan loop
         for itr, tuple in scann_index.idx.next, scann_index.idx do
             checks = checks + 1
 
             -- do main work
             if task.is_tuple_expired(task.args, tuple) then
-                -- delete tuple
-                local key = box.unpack("i", tuple[0])
-                box.delete(task.space_no, key)
                 task.tuples_expired = task.tuples_expired + 1
-                -- process expired tuple
-                if task.process_expired_tuple ~= nil then
-                    task.process_expired_tuple(task.args, tuple)
-                end
+                task.process_expired_tuple(task.space_no, task.args, tuple)
             end
 
             -- check, can worker go to sleep
             if checks >= task.tuples_per_iter then
                 checks = 0
                 if scann_space:len() > 0 then
-                    local delay = (task.tuples_per_iter * task.full_scann_time)
+                    local delay = (task.tuples_per_iter * task.full_scan_time)
                         / scann_space:len()
 
                     if delay > expirationd.constants.max_delay then
@@ -160,7 +154,7 @@ local function create_task(name)
     task.process_expired_tuple = nil
     task.args = nil
     task.tuples_per_iter = expirationd.constants.default_tuples_per_iter
-    task.full_scann_time = expirationd.constants.default_full_scann_time
+    task.full_scan_time = expirationd.constants.default_full_scan_time
     return task
 end
 
@@ -211,10 +205,10 @@ expirationd = {
     -- constants
     constants = finalize_table(
         {
-            -- default value of number of tuples will be checked by one itaration
+            -- default value of number of tuples will be checked by one iteration
             default_tuples_per_iter = 1024,
-            -- default value of time requed for full index scann (in seconds)
-            default_full_scann_time = 3600,
+            -- default value of time required for full index scan (in seconds)
+            default_full_scan_time = 3600,
             -- maximal worker delay (seconds)
             max_delay = 1,
             -- check worker intarval
@@ -230,13 +224,13 @@ expirationd = {
 --
 -- Run named task
 -- params:
---    name -- is taks's name
+--    name -- is task's name
 --    space_no -- task's processing space
 --    is_tuple_expired -- check tuple's expire handler
---    process_expired_tuple -- precess expired tuple handler
+--    process_expired_tuple -- process expired tuple handler
 --    args -- check expire and process after expiration handler's arguments
 --    tuples_per_iter -- number of tuples will be checked by one itaration
---    full_scann_time -- time requed for full index scann (in seconds)
+--    full_scan_time -- time required for full index scan (in seconds)
 --
 function expirationd.run_task(name,
                        space_no,
@@ -244,7 +238,7 @@ function expirationd.run_task(name,
                        process_expired_tuple,
                        args,
                        tuples_per_iter,
-                       full_scann_time)
+                       full_scan_time)
     if name == nil then
         error("task name undefined")
     end
@@ -269,7 +263,6 @@ function expirationd.run_task(name,
     end
     task.space_no = space_no
 
-    -- precess expired tuple handler
     if is_tuple_expired == nil then
         error("precess expired tuple handler shuld be specified")
     elseif type(is_tuple_expired) ~= "function" then
@@ -277,15 +270,15 @@ function expirationd.run_task(name,
     end
     task.is_tuple_expired = is_tuple_expired
 
-    -- optianals params
-
-    -- precess expired tuple handler
-    if process_expired_tuple ~= nil then
-        if type(process_expired_tuple) ~= "function" then
-            error("precess expired tuple handler should be a function")
-        end
-        task.process_expired_tuple = process_expired_tuple
+    -- process expired tuple handler
+    if process_expired_tuple == nil then
+        error("process expired tuple handler should be specified")
+    elseif type(process_expired_tuple) ~= "function" then
+        error("process expired tuple handler should be a function")
     end
+    task.process_expired_tuple = process_expired_tuple
+
+    -- optional params
 
     -- check expire and process after expiration handler's arguments
     task.args = args
@@ -293,17 +286,17 @@ function expirationd.run_task(name,
     -- check tuples per iteration (not required)
     if tuples_per_iter ~= nil then
         if tuples_per_iter <= 0 then
-            error("invalid tuples per iteration parametr")
+            error("invalid tuples per iteration parameter")
         end
         task.tuples_per_iter = tuples_per_iter
     end
 
-    -- check full scann time
-    if full_scann_time ~= nil then
-        if full_scann_time <= 0 then
-            error("invalid full scann time")
+    -- check full scan time
+    if full_scan_time ~= nil then
+        if full_scan_time <= 0 then
+            error("invalid full scan time")
         end
-        task.full_scann_time = full_scann_time
+        task.full_scan_time = full_scan_time
     end
 
     --
@@ -365,7 +358,7 @@ function expirationd.task_details(name)
         print("  ", i, ": ", v)
     end
     print("tuples per iteration: ", task.tuples_per_iter)
-    print("full index scann time: ", task.full_scann_time)
+    print("full index scan time: ", task.full_scan_time)
     print("tuples expired: ", task.tuples_expired)
     print("restarts: ", task.restarts)
     print("guardian fid: ", get_fid(task.guardian_fiber))
@@ -390,7 +383,9 @@ local function check_tuple_expire_by_timestamp(args, tuple)
 end
 
 -- put expired tuple to cemetery
-local function put_tuple_to_cemetery(args, tuple)
+local function put_tuple_to_cemetery(space_no, args, tuple)
+    -- delete expired tuple
+    box.delete(space_no, box.unpack('i', tuple[0]))
     local email = get_field(tuple, 1)
     if args.cemetery_space_no ~= nil and email ~= nil then
         box.replace(args.cemetery_space_no, email, os.time())
