@@ -34,3 +34,27 @@ function sigstor_add(userid, msgid, signatures)
 		box.insert(spaceno, digest, msgid, userid, time)
 	end
 end
+
+--
+-- Run expiration of tuples
+--
+
+local function is_expired(args, tuple)
+	if tuple == nil or #tuple <= args.fieldno then
+		return nil
+	end
+	local field = tuple[args.fieldno]
+	local current_time = os.time()
+	local tuple_expire_time = box.unpack('i', field) + args.expiration_time
+	return current_time >= tuple_expire_time
+end
+
+local function delete_expired(spaceno, args, tuple)
+	box.delete(spaceno, tuple[0], tuple[1], tuple[2])
+end
+
+dofile('expirationd.lua')
+
+for t, spaceno in pairs(signature_type_to_spaceno) do
+	expirationd.run_task(t, spaceno, is_expired, delete_expired, {fieldno = 3, expiration_time = 7*24*60*60})
+end
