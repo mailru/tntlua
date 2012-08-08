@@ -59,21 +59,17 @@ end
 -- Task fibers
 -- ------------------------------------------------------------------------- --
 
-local curr_task = nil
-
-local function worker_loop()
-    -- save current task
-    local task = curr_task
+local function worker_loop(task)
     -- detach worker from guardian and attach it to sched process
     box.fiber.detach()
 
-    local scann_space = box.space[task.space_no]
-    local scann_index = box.space[task.space_no].index[0]
+    local scan_space = box.space[task.space_no]
+    local scan_index = box.space[task.space_no].index[0]
     while true do
         local checks = 0
 
         -- full index scan loop
-        for itr, tuple in scann_index.idx.next, scann_index.idx do
+        for itr, tuple in scan_index.idx.next, scan_index.idx do
             checks = checks + 1
 
             -- do main work
@@ -85,9 +81,9 @@ local function worker_loop()
             -- check, can worker go to sleep
             if checks >= task.tuples_per_iter then
                 checks = 0
-                if scann_space:len() > 0 then
+                if scan_space:len() > 0 then
                     local delay = (task.tuples_per_iter * task.full_scan_time)
-                        / scann_space:len()
+                        / scan_space:len()
 
                     if delay > expirationd.constants.max_delay then
                         delay = expirationd.constants.max_delay
@@ -97,36 +93,32 @@ local function worker_loop()
             end
         end
 
-        if scann_space:len() == 0 then
+        if scan_space:len() == 0 then
             -- space is empty, nothig to do
             box.fiber.sleep(expirationd.constants.max_delay)
-        elseif task.tuples_per_iter > scann_space:len() then
+        elseif task.tuples_per_iter > scan_space:len() then
             -- space is empty, nothig to do
             box.fiber.sleep(expirationd.constants.max_delay)
         end
     end
 end
 
-local function guardian_loop()
-    -- save current task
-    local task = curr_task
+local function guardian_loop(task)
     -- detach guardian from creator and attach it to sched process
     box.fiber.detach()
 
     print("expiration: task '" .. task.name .. "' started")
     -- create worker fiber
-    curr_task = task
     task.worker_fiber = box.fiber.create(worker_loop)
-    box.fiber.resume(task.worker_fiber)
+    box.fiber.resume(task.worker_fiber, task)
 
     while true do
         if task.worker_fiber:id() == 0 then
             print("expiration: task '" .. task.name .. "' restarted")
             task.restarts = task.restarts + 1
             -- create worker fiber
-            curr_task = task
             task.worker_fiber = box.fiber.create(worker_loop)
-            result = box.fiber.resume(task.worker_fiber)
+            result = box.fiber.resume(task.worker_fiber, task)
         end
         box.fiber.sleep(expirationd.constants.check_interval)
     end
@@ -174,11 +166,9 @@ end
 
 -- run task
 local function run_task(task)
-    -- save running task in local variable
-    curr_task = task
     -- start guardian task
     task.guardian_fiber = box.fiber.create(guardian_loop)
-    box.fiber.resume(task.guardian_fiber)
+    box.fiber.resume(task.guardian_fiber, task)
 end
 
 -- kill task
@@ -482,4 +472,3 @@ function expirationd.do_test(space_no, cemetery_space_no)
 
     return true
 end
-
