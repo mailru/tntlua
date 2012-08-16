@@ -30,16 +30,23 @@ function mrim_add(userid, msg)
 	userid = box.unpack('i', userid)
 
 	local limit = 1000
-	local n_msgs, max_msgid = get_key_cardinality_and_max_msgid(0, userid)
 
-	if n_msgs >= limit then
-		return { box.pack('i', n_msgs), box.pack('i', 0) }
+	while true do
+		local n_msgs, max_msgid = get_key_cardinality_and_max_msgid(0, userid)
+
+		if n_msgs >= limit then
+			return { box.pack('i', n_msgs), box.pack('i', 0) }
+		end
+
+		local msgid = max_msgid + 1
+		local status, result = pcall(box.insert, 0, userid, msgid, msg)
+		if status then
+			return { box.pack('i', n_msgs + 1), box.pack('i', msgid) }
+		else
+			--exception
+			box.fiber.sleep(0.001)
+		end
 	end
-
-	local msgid = max_msgid + 1
-	box.insert(0, userid, msgid, msg)
-
-	return { box.pack('i', n_msgs + 1), box.pack('i', msgid) }
 end
 
 --
@@ -67,7 +74,7 @@ function mrim_del_all(userid)
 	userid = box.unpack('i', userid)
 
 	local msgs = { box.select(0, 0, userid) }
-	for _, msg in ipairs(msgs) do
+	for _, msg in pairs(msgs) do
 		box.delete(0, msg[0], msg[1])
 	end
 
