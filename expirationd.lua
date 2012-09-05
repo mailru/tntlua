@@ -1,26 +1,26 @@
 -- ========================================================================= --
--- Tarantool/box expiration daemon
+-- Tarantool/Box expiration daemon
 --
--- Daemon's managements functions:
---   - expirationd.run_task       -- run new expiration task
---   - expirationd.kill_task      -- kill running task
---   - expirationd.show_task_list -- print task list
---   - expirationd.task_details   -- show task detail
+-- Daemon management functions:
+--   - expirationd.run_task       -- run a new expiration task
+--   - expirationd.kill_task      -- kill a running task
+--   - expirationd.show_task_list -- print the task list
+--   - expirationd.task_details   -- show task details
 -- ========================================================================= --
 
 -- ========================================================================= --
 -- local support functions
 -- ========================================================================= --
 
--- This function create new table with constants members. The runntime errro
--- will be rised if attempting to change table members.
+-- Create a new table with constant members. A runtime error
+-- is raised on attempt to change a table field.
 local function finalize_table(table)
     return setmetatable ({}, {
                              __index = table,
                              __newindex = function(table_arg,
                                                    name_arg,
                                                    value_arg)
-                                 error("attempting to change constant " ..
+                                 error("attempt to change constant " ..
                                        tostring(name_arg) ..
                                        " to "
                                        .. tostring(value_arg), 2)
@@ -60,8 +60,9 @@ end
 -- ------------------------------------------------------------------------- --
 
 local function worker_loop(task)
-    -- detach worker from guardian and attach it to sched process
+    -- detach worker from the guardian and attach it to sched fiber
     box.fiber.detach()
+    box.fiber.name(task.name)
 
     local scan_space = box.space[task.space_no]
     local scan_index = box.space[task.space_no].index[0]
@@ -78,7 +79,7 @@ local function worker_loop(task)
                 task.process_expired_tuple(task.space_no, task.args, tuple)
             end
 
-            -- check, can worker go to sleep
+            -- find out if the worker can go to sleep
             if checks >= task.tuples_per_iter then
                 checks = 0
                 if scan_space:len() > 0 then
@@ -94,21 +95,22 @@ local function worker_loop(task)
         end
 
         if scan_space:len() == 0 then
-            -- space is empty, nothig to do
+            -- the space is empty, nothing to do
             box.fiber.sleep(expirationd.constants.max_delay)
         elseif task.tuples_per_iter > scan_space:len() then
-            -- space is empty, nothig to do
+            -- iteration is complete, yield
             box.fiber.sleep(expirationd.constants.max_delay)
         end
     end
 end
 
 local function guardian_loop(task)
-    -- detach guardian from creator and attach it to sched process
+    -- detach the guardian from the creator and attach it to sched
     box.fiber.detach()
+    box.fiber.name("guardian of "..task.name)
 
     print("expiration: task '" .. task.name .. "' started")
-    -- create worker fiber
+    -- create a worker fiber
     task.worker_fiber = box.fiber.create(worker_loop)
     box.fiber.resume(task.worker_fiber, task)
 
@@ -153,7 +155,7 @@ end
 -- get task for table
 local function get_task(name)
     if name == nil then
-        error("task name undefined")
+        error("task name is nil")
     end
 
     -- check, does the task exist
@@ -176,10 +178,12 @@ local function kill_task(task)
     if task.guardian_fiber ~= nil and task.guardian_fiber:id() ~= 0 then
         -- kill guardian fiber
         box.fiber.cancel(task.guardian_fiber)
+        task.guardian_fiber = nil
     end
     if task.worker_fiber ~= nil and task.worker_fiber:id() ~= 0 then
         -- kill worker fiber
         box.fiber.cancel(task.worker_fiber)
+        task.worker_fiber = nil
     end
 end
 
@@ -212,25 +216,29 @@ expirationd = {
 -- ========================================================================= --
 
 --
--- Run named task
+-- Run a named task
 -- params:
---    name -- is task's name
---    space_no -- task's processing space
---    is_tuple_expired -- check tuple's expire handler
---    process_expired_tuple -- process expired tuple handler
---    args -- check expire and process after expiration handler's arguments
---    tuples_per_iter -- number of tuples will be checked by one itaration
---    full_scan_time -- time required for full index scan (in seconds)
+--    name             -- task name
+--    space_no         -- space to look in for expired tuples
+--    is_tuple_expired -- a function, must accept tuple and return
+--                        true/false (is tuple expired or not),
+--                        receives (args, tuple) as arguments
+--    process_expired_tuple -- applied to expired tuples, receives 
+--                        (space_no, args, tuple) as arguments
+--    args             -- passed to is_tuple_expired and process_expired_tuple()
+--                        as additional context
+--    tuples_per_iter  -- number of tuples will be checked by one itaration
+--    full_scan_time   -- time required for full index scan (in seconds)
 --
 function expirationd.run_task(name,
-                       space_no,
-                       is_tuple_expired,
-                       process_expired_tuple,
-                       args,
-                       tuples_per_iter,
-                       full_scan_time)
+                              space_no,
+                              is_tuple_expired,
+                              process_expired_tuple,
+                              args,
+                              tuples_per_iter,
+                              full_scan_time)
     if name == nil then
-        error("task name undefined")
+        error("task name is nil")
     end
 
     -- check, does the task exist
@@ -239,32 +247,28 @@ function expirationd.run_task(name,
     end
     local task = create_task(name)
 
-    --
-    -- args
-    --
-
     -- required params
 
     -- check expiration space number (required)
     if space_no == nil then
-        error("expiration space shuld be specified")
+        error("space_no is nil")
     elseif space_no < 0 or space_no >= 256 then
-        error("invalid expiration space number")
+        error("invalid space_no")
     end
     task.space_no = space_no
 
     if is_tuple_expired == nil then
-        error("precess expired tuple handler shuld be specified")
+        error("is_tuple_expired is nil, please provide a check function")
     elseif type(is_tuple_expired) ~= "function" then
-        error("precess expired tuple handler should be a function")
+        error("is_tuple_expired is not a function, please provide a check function")
     end
     task.is_tuple_expired = is_tuple_expired
 
     -- process expired tuple handler
     if process_expired_tuple == nil then
-        error("process expired tuple handler should be specified")
+        error("process_expired_tuple is nil, please provide a purge function")
     elseif type(process_expired_tuple) ~= "function" then
-        error("process expired tuple handler should be a function")
+        error("process_expired_tuple is not defined, please provide a purge function")
     end
     task.process_expired_tuple = process_expired_tuple
 
@@ -343,9 +347,14 @@ function expirationd.task_details(name)
     print("space: ", task.space_no)
     print("is_tuple_expired handler: ", task.is_tuple_expired)
     print("process_expired_tuple handler: ", task.process_expired_tuple)
-    print("args:")
-    for i, v in pairs(task.args) do
-        print("  ", i, ": ", v)
+    io.write("args:")
+    if task.args ~= nil then
+        io.write("\n")
+        for i, v in pairs(task.args) do
+            print("  ", i, ": ", v)
+        end
+    else
+        io.write(" nil\n")
     end
     print("tuples per iteration: ", task.tuples_per_iter)
     print("full index scan time: ", task.full_scan_time)
@@ -382,10 +391,11 @@ local function put_tuple_to_cemetery(space_no, args, tuple)
     end
 end
 
-
 -- ========================================================================= --
 -- Expriration module test functions
 -- ========================================================================= --
+-- Warning: for these test functions to work, you need
+-- a space with a numeric primary key defined on field[0]
 
 -- generate email string
 local function get_email(uid)
