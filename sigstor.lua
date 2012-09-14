@@ -36,6 +36,18 @@ function sigstor_add(userid, msgid, signatures)
 end
 
 --
+-- Get list of userid+msgid with specified @signature.
+--
+function sigstor_get(signature)
+	local t = signature:sub(1, 2)
+	local digest = signature:sub(3, 18)
+	-- convert signature type to space number
+	local spaceno = get_spaceno(t)
+
+	return box.select(spaceno, 0, digest)
+end
+
+--
 -- Run expiration of tuples
 --
 
