@@ -8,7 +8,7 @@
 -- index0 - { digest, msgid, userid } (TREE, unique)
 --
 
-local signature_type_to_spaceno = { at = 0, im = 1, me = 2, sh = 3, i2 = 4, ur = 5, em = 6, tr = 7, bl = 8 }
+local signature_type_to_spaceno = { at = 0, im = 1, me = 2, sh = 3, i2 = 4, ur = 5, em = 6, i3 = 7, au = 8, pm = 9, ph = 10 }
 
 local function get_spaceno(sigtype)
 	local v = signature_type_to_spaceno[sigtype]
