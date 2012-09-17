@@ -13,7 +13,7 @@ local signature_type_to_spaceno = { at = 0, im = 1, me = 2, sh = 3, i2 = 4, ur =
 local function get_spaceno(sigtype)
 	local v = signature_type_to_spaceno[sigtype]
 	if v ~= nil then return v end
-	return 0
+	error("unknown signature type")
 end
 
 --
