@@ -1,4 +1,4 @@
--- 
+--
 -- Implementation of queueing API.
 --
 -- A task in a queue can be in one of the following states:
@@ -8,9 +8,9 @@
 -- TAKEN      the task is being  worked on
 -- BURIED     the task is dead: it's either complete, or
 --            cancelled or otherwise should not be worked on
--- 
+--
 -- The following methods are supported:
--- 
+--
 -- ------------------
 -- - Producer methods
 -- ------------------
@@ -19,10 +19,10 @@
 --
 -- box.queue.put(sno, delay, <tuple data>)
 -- Creates a new task and stores it in the queue.
--- 
+--
 -- sno          designates the queue (one queue per space).
 -- timeout      if not 0, task execution is postponed
---              for the given timeout (in seconds) 
+--              for the given timeout (in seconds)
 -- <tuple data> the rest of the task parameters, are stored
 --              in the tuple data and describe the task itself
 --
@@ -31,7 +31,7 @@
 -- created task.
 --
 -- box.queue.push(sno, <tuple data>)
--- 
+--
 -- Same as above, but puts the task at the beginning of
 -- the queue. Returns a 64 bit id of the newly created task.
 --
@@ -42,35 +42,35 @@
 -- ------------------
 -- - Consumer methods
 -- ------------------
--- 
+--
 -- box.queue.take(sno, timeout)
--- 
--- Finds a task for execution and marks the task as TAKEN. 
+--
+-- Finds a task for execution and marks the task as TAKEN.
 -- Returns the task id and contents of the task.
 -- A task in reserved to the consumer which issued
 -- the request and will not be given to any other
--- consumer. 
+-- consumer.
 -- 'timeout' is considered if the queue is empty
 -- If timeout is 0, the request immediately returns nil.
 -- If timeout is not given, the caller is suspended
 -- until a task appears in the queue.
 -- Otherwise, the caller is suspended until
--- for the duration of the timeout (in seconds). 
+-- for the duration of the timeout (in seconds).
 --
 -- box.queue.release(sno, id, delay)
 -- If the task is assigned to the consumer issuing
 -- the request, it's put back to the queue, in READY
--- state. If delay is given, next execution 
+-- state. If delay is given, next execution
 -- of the task is delayed for delay seconds.
--- If the task has not been previously taken 
+-- If the task has not been previously taken
 -- by the consumer, an error is raised.
 --
--- box.queue.ack(sno, id) 
+-- box.queue.ack(sno, id)
 -- Mark the task as complete and delete it,
 -- as long as it was TAKEN by the consumer issuing
--- the request. 
+-- the request.
 -- ---------------------------------------------
--- - How to configure a space to support a queue 
+-- - How to configure a space to support a queue
 -- ---------------------------------------------
 -- space[0].enabled = true
 --
@@ -78,14 +78,14 @@
 -- space[0].index[0].unique = true
 -- space[0].index[0].key_field[0].fieldno = 0
 -- space[0].index[0].key_field[0].type = NUM64
--- 
+--
 -- space[0].index[1].type = TREE
--- space[0].index[1].unique = false 
+-- space[0].index[1].unique = false
 -- space[0].index[1].key_field[0].fieldno = 1
 -- space[0].index[1].key_field[0].type = NUM
 --
 -- ---------------------------------------------
--- Background expiration of tasks taken by 
+-- Background expiration of tasks taken by
 -- detached consumers.
 ------------------------------------------------
 -- There is a background fiber which puts all tasks
@@ -96,21 +96,21 @@
 -- --------------------------------------------------
 -- The following task metadata is maintained by the
 -- queue module and can be inspected at any time:
--- 
+--
 -- t[0]    unixtime + counter -- time in seconds when
 --         the task was added to the queue, primary key
 -- t[1]    fiber id of the fiber assigned to the task.
--- 
+--
 --  Tasks are executed in the order of addition.
 --  Delayed tasks get addition time from the future.
---  Prioritized past have addition time from the past.
--- 
+--  Prioritized tasks have addition time from the past.
+--
 -- t[2]    task state R - ready, T - taken, B - buried
--- 
--- t[3]    task execution counter. Useful for 
---         detecting 'poisoned' tasks, which 
+--
+-- t[3]    task execution counter. Useful for
+--         detecting 'poisoned' tasks, which
 --         were returned to the queue too many times.
--- 
+--
 
 box.queue = {}
 
@@ -124,23 +124,23 @@ local c_count = 3
 
 -- critical: these functions work with both, lua numbers (doubles)
 -- and int64
-local function lshift(number, bits)
+local function lshift(number)
     return number * 2^32
 end
 
-local function rshift(number, bits)
+local function rshift(number)
     return number / 2^32
 end
 
 function box.queue.id(delay)
 -- IEEE 754 8-byte double has 53 bits for precision. Ensure
 -- the auto-increment step fits into a Lua number nicely
-    box_queue_id = box_queue_id + 2^12 
+    box_queue_id = box_queue_id + 2^12
 -- shift os.time(), which is unix time, to the high part of 64 bit number
 -- and ensure uniqueness of id
 -- sic: we do the shifting while the number is still lua number,
--- to get a value within the Lua number range. This makes working
--- with queue ids from Tarantool command line easier
+-- to get a value within the Lua number range. This helps dealing
+-- with queue ids from Tarantool command line
     if delay == nil then
         delay = 0
     end
