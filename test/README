@@ -1,0 +1,8 @@
+How to run tests:
+
+./run.pl test.lua
+
+What ./run.pl does:
+
+cat queue.lua | tarantool > queue.reject
+diff -u queue.reject queue.result
