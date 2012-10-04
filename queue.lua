@@ -111,6 +111,7 @@
 --         detecting 'poisoned' tasks, which 
 --         were returned to the queue too many times.
 -- 
+
 box.queue = {}
 
 local box_queue_id = 0
@@ -140,6 +141,9 @@ function box.queue.id(delay)
 -- sic: we do the shifting while the number is still lua number,
 -- to get a value within the Lua number range. This makes working
 -- with queue ids from Tarantool command line easier
+    if delay == nil then
+        delay = 0
+    end
     return tonumber64(lshift(os.time() + delay) + bit.tobit(box_queue_id))
 end
 
@@ -191,8 +195,8 @@ local function consumer_find_task(sno, id)
     if task == nil then
         error("task not found")
     end
-    if task[c_fid] ~= box.fiber.id() then
-        error("the task does not belong to the consumer")
+    if box.unpack('i',task[c_fid]) ~= box.fiber.id() then
+        error("the task does not belong to the consumer " .. box.fiber.id() .. ", but to " .. box.unpack('i',task[c_fid]) )
     end
     return task
 end
@@ -204,9 +208,18 @@ function box.queue.ack(sno, id)
 end
 
 function box.queue.release(sno, id, delay)
+    if delay == nil then
+        delay = 0
+    end
     sno, id, delay = tonumber(sno), tonumber64(id), tonumber(delay)
     local task = consumer_find_task(sno, id)
-    local newid = box.queue.id(delay)
+    -- we only change id if we need to adjust delay
+    local newid
+    if delay ~= 0 then
+        newid = box.queue.id(delay)
+    else
+        newid = id
+    end
     return box.update(sno, id, "=p=p=p", c_id, newid, c_fid, 0, c_state, 'R')
 end
 
