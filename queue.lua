@@ -1,255 +1,323 @@
--- 
--- Implementation of queueing API.
---
--- A task in a queue can be in one of the following states:
--- READY      initial state, the task is ready for execution
--- DELAYED    initial state, the task will become ready
---            for execution when a timeout expires
--- TAKEN      the task is being  worked on
--- BURIED     the task is dead: it's either complete, or
---            cancelled or otherwise should not be worked on
--- 
--- The following methods are supported:
--- 
--- ------------------
--- - Producer methods
--- ------------------
--- box.queue.start(sno)
--- start queue in space sno
---
--- box.queue.put(sno, delay, <tuple data>)
--- Creates a new task and stores it in the queue.
--- 
--- sno          designates the queue (one queue per space).
--- timeout      if not 0, task execution is postponed
---              for the given timeout (in seconds) 
--- <tuple data> the rest of the task parameters, are stored
---              in the tuple data and describe the task itself
---
--- The task is added to the end of the queue.
--- This method returns a 64 bit integer id of the newly
--- created task.
---
--- box.queue.push(sno, <tuple data>)
--- 
--- Same as above, but puts the task at the beginning of
--- the queue. Returns a 64 bit id of the newly created task.
---
--- box.queue.delete(sno, id)
--- Delets a taks by id.
--- Returns the contents of the deleted task.
---
--- ------------------
--- - Consumer methods
--- ------------------
--- 
--- box.queue.take(sno, timeout)
--- 
--- Finds a task for execution and marks the task as TAKEN. 
--- Returns the task id and contents of the task.
--- A task in reserved to the consumer which issued
--- the request and will not be given to any other
--- consumer. 
--- 'timeout' is considered if the queue is empty
--- If timeout is 0, the request immediately returns nil.
--- If timeout is not given, the caller is suspended
--- until a task appears in the queue.
--- Otherwise, the caller is suspended until
--- for the duration of the timeout (in seconds). 
---
--- box.queue.release(sno, id, delay)
--- If the task is assigned to the consumer issuing
--- the request, it's put back to the queue, in READY
--- state. If delay is given, next execution 
--- of the task is delayed for delay seconds.
--- If the task has not been previously taken 
--- by the consumer, an error is raised.
---
--- box.queue.ack(sno, id) 
--- Mark the task as complete and delete it,
--- as long as it was TAKEN by the consumer issuing
--- the request. 
--- ---------------------------------------------
--- - How to configure a space to support a queue 
--- ---------------------------------------------
--- space[0].enabled = true
---
--- space[0].index[0].type = TREE
--- space[0].index[0].unique = true
--- space[0].index[0].key_field[0].fieldno = 0
--- space[0].index[0].key_field[0].type = NUM64
--- 
--- space[0].index[1].type = TREE
--- space[0].index[1].unique = false 
--- space[0].index[1].key_field[0].fieldno = 1
--- space[0].index[1].key_field[0].type = NUM
---
--- ---------------------------------------------
--- Background expiration of tasks taken by 
--- detached consumers.
-------------------------------------------------
--- There is a background fiber which puts all tasks
--- for which there is no active consumer back to
--- READY state.
--- --------------------------------------------------
--- Task metadata
--- --------------------------------------------------
--- The following task metadata is maintained by the
--- queue module and can be inspected at any time:
--- 
--- t[0]    unixtime + counter -- time in seconds when
---         the task was added to the queue, primary key
--- t[1]    fiber id of the fiber assigned to the task.
--- 
---  Tasks are executed in the order of addition.
---  Delayed tasks get addition time from the future.
---  Prioritized past have addition time from the past.
--- 
--- t[2]    task state R - ready, T - taken, B - buried
--- 
--- t[3]    task execution counter. Useful for 
---         detecting 'poisoned' tasks, which 
---         were returned to the queue too many times.
--- 
-
-box.queue = {}
-
-local box_queue_id = 0
+if box.queue == nil then
+	box.queue = {}
+	box.queue.taken = {}
+	box.queue.sequence = {}
+	box.queue.enabled = {}
+else
+	local taken = box.queue.taken
+	local enabled = box.queue.enabled
+	box.queue = {}
+	box.queue.sequence = {}
+	if taken then
+		box.queue.taken = taken
+	else
+		box.queue.taken = {}
+	end
+	if enabled then
+		box.queue.enabled = enabled
+	else
+		box.queue.enabled = {}
+	end
+end
 
 -- space column description
-local c_id = 0
-local c_fid = 1
-local c_state = 2
-local c_count = 3
 
--- critical: these functions work with both, lua numbers (doubles)
--- and int64
-local function lshift(number, bits)
-    return number * 2^32
+
+local c_id      = 0 -- id, int64, used as sequence
+local c_tube    = 1 -- tube id. int32
+local c_prio    = 2 -- priority of task, int32
+local c_status  = 3 -- status of task. available values: [ 'R' - ready, 'D' - delayed, 'T' - taken, 'B' - buried ]
+local c_runat   = 4 -- time, when task should be accounted as ready. microseconds. int64. box.time64()
+local c_ttr     = 5 -- Time-To-Release. time amount task allowed to be taken. microseconds. int64.
+local c_ttl     = 6 -- Time-To-Live. time amount task allowed to be in queue. microseconds. int64.
+
+
+local c_taken   = 7 -- count of how many times task was taken
+local c_buried  = 8 -- count of how many times task was buried
+
+local i_pk      = 0
+local i_ready   = 1
+local i_run     = 2
+
+function box.queue.id(sno)
+	sno = tonumber(sno)
+	if box.queue.sequence[ sno ] then
+		box.queue.sequence[ sno ] = box.queue.sequence[ sno ] + 1ULL
+	else
+		local tuple = box.space[sno].index[i_pk]:max()
+		local id = 2^25 -- 33554432
+		if tuple ~= nil then
+			id = box.unpack('l',tuple[0]) + 0ULL
+		end
+		box.queue.sequence[ sno ] = id + 1ULL
+	end
+	return box.queue.sequence[ sno ]
 end
 
-local function rshift(number, bits)
-    return number / 2^32
+function box.queue.put(sno, tube, prio, delay, ttr, ttl, ...)
+	sno, tube, prio, delay, ttr, ttl = tonumber(sno), tonumber(tube), tonumber(prio), tonumber(delay), tonumber(ttr), tonumber(ttl)
+	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
+	if prio == nil then prio = 0x7fff end
+	if delay == nil then delay = 0 end
+	if tube == nil then tube = 0 end
+	if ttr == nil or ttr == 0 then ttr = 300 end
+	local status = 'R'
+	local runat = 0ULL
+	
+	if delay and ttl and delay > ttl then
+		error("Delay can't be longer than TTL")
+	end
+	
+	if ttl ~= nil and ttl > 0 then
+		ttl = box.time64() + tonumber64( ttl * 1E6 )
+	else
+		ttl = 0xffffffffffffffffULL
+	end
+	
+	if delay > 0 then
+		status = 'D'
+		runat = box.time64() + tonumber64( delay * 1E6 )
+	else
+		runat = ttl
+	end
+	if ttr ~= nil and ttr > 0 then
+		ttr = tonumber64( ttr * 1E6 )
+	else
+		ttr = 300000000ULL -- 300 seconds
+	end
+	local id = box.queue.id(sno)
+	--                     id, tube, prio, status, runat  ttr, ttl, taken, buried,
+	return box.insert(sno, id, tube, prio, status, runat, ttr, ttl, 0,     0,      ...)
 end
 
-function box.queue.id(delay)
--- IEEE 754 8-byte double has 53 bits for precision. Ensure
--- the auto-increment step fits into a Lua number nicely
-    box_queue_id = box_queue_id + 2^12 
--- shift os.time(), which is unix time, to the high part of 64 bit number
--- and ensure uniqueness of id
--- sic: we do the shifting while the number is still lua number,
--- to get a value within the Lua number range. This makes working
--- with queue ids from Tarantool command line easier
-    if delay == nil then
-        delay = 0
-    end
-    return tonumber64(lshift(os.time() + delay) + bit.tobit(box_queue_id))
+function box.queue.putdef(sno, tube, ...)
+	return box.queue.put(sno,tube,nil,nil,nil,nil,...)
 end
 
-function box.queue.put(sno, delay, ...)
-    sno, delay = tonumber(sno), tonumber(delay)
-    local id = box.queue.id(delay)
-    return box.insert(sno, id, 0, 'R', 0, ...)
-end
 
-function box.queue.push(sno, ...)
-    sno = tonumber(sno)
-    local minid = box.unpack('l', box.space[sno].index[0]:min()[0])
-    local id = lshift(rshift(minid) - 1)
-    return box.insert(sno, id, 0, 'R', 0, ...)
+function box.queue.push(sno, prio, ttr, ...)
+	error("TODO: index search")
 end
 
 function box.queue.delete(sno, id)
-    sno, id = tonumber(sno), tonumber64(id)
-    return box.space[sno]:delete(id)
+	sno, id = tonumber(sno), tonumber64(id)
+	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
+	return box.space[sno]:delete(id)
 end
 
-function box.queue.take(sno, timeout)
-    sno, timeout = tonumber(sno), tonumber(timeout)
-    if timeout == nil then
-        timeout = 60*60*24*365 -- one year
-    end
--- find a ready task
-    local task = nil
-    while true do
-        task = box.select(sno, 1, 0)
-        if task ~= nil then
-            break
-        end
-        if timeout > 0 then
-            box.fiber.sleep(1)
-            timeout = timeout - 1
-        else
-            return nil
-        end
-    end
-    return box.update(sno, task[0], "=p=p+p",
-                      c_fid, box.fiber.id(),
-                      c_state, 'T', -- taken
-                      c_count, 1)
+
+function box.queue.take(sno, tube, timeout)
+	sno, tube, timeout = tonumber(sno), tonumber(tube), tonumber(timeout)
+	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
+	-- if timeout == nil then timeout = 60*60*24*365 end
+	if timeout == nil then timeout = 60 end
+	if tube == nil then tube = 0 end
+	local sleep = 0;
+	-- don't sleep for all the timeout. Split it into parts
+	if timeout > 0 then
+		sleep = timeout / 10;
+		if sleep > 1 then
+			sleep = 0.1
+		end
+	end
+	local finish = box.time() + timeout;
+	local idx = box.space[sno].index[i_ready].idx
+	print("Running take at "..box.time()..", until "..finish.."\n")
+	
+	local one_ready
+	while true do
+		local x
+		local one_delay
+		x,one_ready = box.space[sno].index[i_ready]:next_equal( tube,'R' )
+		x,one_delay = box.space[sno].index[i_ready]:next_equal( tube,'D' )
+		-- print( "ready: ", one_ready )
+		-- print( "delay: ", one_delay )
+		if one_delay and ( box.unpack('l',one_delay[c_runat]) > box.time64() ) then
+			-- print("delay is still waiting\n")
+			one_delay = nil
+		end
+		if one_ready and one_delay then
+			if one_ready[c_id] > one_delay[c_id] then
+				one_ready = one_delay
+			end
+			break
+		elseif one_ready then
+			break
+		elseif one_delay then
+			one_ready = one_delay
+			break
+		end
+		print("No task found. Sleeping for "..sleep.."\n");
+		if box.time() >= finish then break end
+		box.fiber.sleep( sleep )
+	end
+	if one_ready == nil then return end
+	box.queue.taken[ one_ready[0] ] = box.fiber.id()
+	-- task may remain in status T for an amount of ttr microseconds. so, put time + ttr into runat
+	return box.update(
+		sno, one_ready[0],
+			"=p=p+p",
+			-- c_fid, box.fiber.id(),
+			c_status, 'T', -- taken
+			c_runat, box.time64() + box.unpack('l', one_ready[ c_ttr ]),
+			c_taken, 1
+	)
 end
 
 local function consumer_find_task(sno, id)
-    local task = box.select(sno, 0, id)
-    if task == nil then
-        error("task not found")
-    end
-    if box.unpack('i',task[c_fid]) ~= box.fiber.id() then
-        error("the task does not belong to the consumer " .. box.fiber.id() .. ", but to " .. box.unpack('i',task[c_fid]) )
-    end
-    return task
+	sno, id = tonumber(sno), tonumber64(id)
+	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
+	local taken_by = box.queue.taken[ box.pack('l',id) ]
+	local task
+	if taken_by == box.fiber.id() then
+		task = box.select(sno, i_pk, id)
+	elseif taken_by then
+		error(string.format( "Task taken by %d. Not you (%d)", taken_by, box.fiber.id() ))
+	else
+		error("Task not taken by any")
+	end
+	if task == nil then
+		error("Task not found for id " .. tostring(id) )
+	end
+	return task
 end
 
-function box.queue.ack(sno, id)
-    sno, id = tonumber(sno), tonumber64(id)
-    local task = consumer_find_task(sno, id)
-    box.space[sno]:delete(id)
+
+function box.queue.ack( sno, id )
+	sno, id = tonumber(sno), tonumber64(id)
+	local task = consumer_find_task(sno,id)
+	box.space[sno]:delete(task[0])
 end
 
-function box.queue.release(sno, id, delay)
-    if delay == nil then
-        delay = 0
-    end
-    sno, id, delay = tonumber(sno), tonumber64(id), tonumber(delay)
-    local task = consumer_find_task(sno, id)
-    -- we only change id if we need to adjust delay
-    local newid
-    if delay ~= 0 then
-        newid = box.queue.id(delay)
-    else
-        newid = id
-    end
-    return box.update(sno, id, "=p=p=p", c_id, newid, c_fid, 0, c_state, 'R')
+local function _up_prio(prio)
+	if prio then
+		return c_prio, prio
+	else
+		return
+	end
 end
 
--- return abandoned tasks to the work queue
-local function queue_expire(sno)
-    box.fiber.detach()
-    box.fiber.name("box.queue "..sno)
-    local idx = box.space[sno].index[1].idx
-    while true do
-        local i = 0
-        for it, tuple in idx.next, idx, box.fiber.id() do
-            fid  = tuple[c_fid]
-            if box.fiber.find(fid) == nil then
-                local id = tuple[0]
-                box.update(sno, id, "=p=p", c_fid, 0, c_state, 'R')
-                break
-            end
-            i = i + 1
-            if i == 100 then
-                -- sleep without resetting the iterator
-                box.fiber.sleep(1)
-                i = 0
-            end
-        end
-        -- sleep before the next iteration
-        box.fiber.sleep(1)
-    end
+function box.queue.release( sno, id, prio, delay, ttr, ttl )
+	sno, id, prio, delay, ttr, ttl = tonumber(sno), tonumber64(id), tonumber(prio), tonumber(delay), tonumber(ttr), tonumber(ttl)
+	local task = consumer_find_task(sno,id)
+	-- if something is set, then update and recalculate
+	if delay and ttl and delay > ttl then
+		error("Delay can't be longer than TTL")
+	end
+	
+	if prio == nil then
+		prio = box.unpack('i',task[c_prio])
+	end
+	
+	if ttr ~= nil and ttr > 0 then
+		ttr = tonumber64( ttr * 1E6 )
+	else
+		ttr = box.unpack('l',task[c_ttr])
+	end
+	
+	if ttl ~= nil and ttl > 0 then
+		ttl = box.time64() + tonumber64( ttl * 1E6 )
+	else
+		ttl = box.unpack('l',task[c_ttl])
+	end
+	
+	local status, runat
+	if delay and delay > 0 then
+		status = 'D'
+		runat = box.time64() + tonumber64( delay * 1E6 )
+	else
+		status = 'R'
+		runat = ttl
+	end
+	
+	return box.update(sno, id,
+		"=p=p=p=p=p",
+		c_prio, prio,
+		c_status, status,
+		c_runat, runat,
+		c_ttr, ttr,
+		c_ttl, ttl
+	)
+
 end
 
-function box.queue.start(sno)
-    sno = tonumber(sno)
-    box.fiber.resume(box.fiber.create(queue_expire), sno)
+function box.queue.collect(sno)
+	sno = tonumber(sno)
+	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
+	local idx = box.space[sno].index[i_run]
+	local it, tuple
+	
+	for it, tuple in idx.next, idx, 0 do
+		local runat = box.unpack('l',tuple[c_runat])
+		if runat > box.time64() then
+			break
+		end
+		print(tuple[c_status] .. ": " .. tostring( runat/1E6 ) .. "\n")
+		if tuple[c_status] == 'D' then
+			-- update tuple, set status = R, runat = ttl
+			if ( box.unpack('l',tuple[c_ttl]) > box.time64() ) then
+				print("Turn delayed into ready: ", tuple)
+				box.update( sno,tuple[0],
+						"=p=p",
+						c_status, 'R',
+						c_runat, box.unpack('l',tuple[c_ttl])
+				)
+			else
+				print("Remove out delayed since TTL passed by: ", tuple )
+				box.space[sno]:delete(tuple[0])
+			end
+		elseif tuple[c_status] == 'R' then
+			-- puff! Task run out of time. Delete
+			print("Remove out of TTL: ", tuple )
+			box.space[sno]:delete(tuple[0])
+		elseif tuple[c_status] == 'T' then
+			-- TTR Expired. Give task back
+			print("Turn taken into ready because of TTR: ", tuple)
+			box.queue.taken[ tuple[0] ] = nil
+			box.update( sno,tuple[0],
+					"=p=p",
+					c_status, 'R',
+					c_runat, box.unpack('l',tuple[c_ttl])
+			)
+			
+		end
+	end
+	
 end
+
+local function queue_watcher(sno)
+	sno = tonumber(sno)
+	box.fiber.detach()
+	box.fiber.name("box.queue.watcher["..sno.."]")
+	print("Starting queue watcher for space "..sno)
+	while true do
+		box.fiber.testcancel()
+		box.queue.collect(sno)
+		box.fiber.sleep(0.001)
+	end
+end
+
+function box.queue.enable(sno)
+	sno = tonumber(sno)
+	if box.queue.enabled[sno] then error("Space ".. sno .. " queue already enabled") end
+	
+	local fiber = box.fiber.create(queue_watcher)
+	
+	print("created fiber ", box.fiber.id(fiber))
+	box.queue.enabled[sno] = box.fiber.id( fiber )
+	box.fiber.resume(fiber, sno)
+	return
+end
+
+function box.queue.disable(sno)
+	sno = tonumber(sno)
+	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
+	local fiber = box.fiber.find( box.queue.enabled[sno] )
+	if not fiber then
+		error("Cannot find fiber by id " .. box.queue.enabled[sno])
+	end
+	print("found created fiber: ", box.fiber.id(fiber))
+	box.fiber.cancel( fiber )
+	box.queue.enabled[sno] = nil
+end
+
