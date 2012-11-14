@@ -229,7 +229,7 @@ end
 function box.queue.delete(sno, id)
 	sno, id = tonumber(sno), tonumber64(id)
 	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
-	box.queue.taken[ box.pack('l',id) ] = nil
+	box.queue.taken[sno][ box.pack('l',id) ] = nil
 	return box.space[sno]:delete(id)
 end
 
@@ -242,7 +242,7 @@ function box.queue.take(sno, tube, timeout)
 	local x,one_ready = box.space[sno].index[i_ready]:next_equal( tube,'R' )
 	if one_ready == nil then return end
 	
-	box.queue.taken[ one_ready[0] ] = box.fiber.id()
+	box.queue.taken[sno][ one_ready[0] ] = box.fiber.id()
 	-- task may remain in status T for an amount of ttr microseconds. so, put time + ttr into runat
 	return box.update(
 		sno, one_ready[0],
@@ -285,7 +285,7 @@ function box.queue.take1(sno, tube, timeout)
 		box.fiber.sleep( sleep )
 	end
 	if one_ready == nil then return end
-	box.queue.taken[ one_ready[0] ] = box.fiber.id()
+	box.queue.taken[sno][ one_ready[0] ] = box.fiber.id()
 	-- task may remain in status T for an amount of ttr microseconds. so, put time + ttr into runat
 	return box.update(
 		sno, one_ready[0],
@@ -300,7 +300,7 @@ end
 local function consumer_check_task(sno, id)
 	sno, id = tonumber(sno), tonumber64(id)
 	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
-	local taken_by = box.queue.taken[ box.pack('l',id) ]
+	local taken_by = box.queue.taken[sno][ box.pack('l',id) ]
 	local task
 	if taken_by == box.fiber.id() then
 		-- don't select task. if it will be release, then select it inside release
@@ -317,7 +317,7 @@ end
 function box.queue.ack( sno, id )
 	sno, id = tonumber(sno), tonumber64(id)
 	consumer_check_task(sno,id)
-	box.queue.taken[ box.pack('l',id) ] = nil
+	box.queue.taken[sno][ box.pack('l',id) ] = nil
 	box.space[sno]:delete( id )
 end
 
@@ -355,7 +355,7 @@ function box.queue.release( sno, id, prio, delay, ttr, ttl )
 		runat = ttl
 	end
 	
-	box.queue.taken[ box.pack('l',id) ] = nil
+	box.queue.taken[sno][ box.pack('l',id) ] = nil
 	
 	return box.update(sno, id,
 		"=p=p=p=p=p",
@@ -366,6 +366,30 @@ function box.queue.release( sno, id, prio, delay, ttr, ttl )
 		c_ttl, ttl
 	)
 
+end
+
+function box.queue.check_clients(sno)
+	sno = tonumber(sno)
+	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
+	
+	for pid, fib in pairs( box.queue.taken[sno] ) do
+		local id = box.unpack('l', pid);
+		local fiber = box.fiber.find( fib );
+		if not fiber then
+			-- return task back
+			local tuple = box.select( sno, 0, id )
+			if tuple then
+				box.update( sno,tuple[0],
+						"=p=p",
+						c_status, 'R',
+						c_runat, box.unpack('l',tuple[c_ttl])
+				)
+			end
+			box.queue.taken[sno][pid] = nil
+		end;
+		
+	end
+	
 end
 
 function box.queue.collect(sno)
@@ -381,6 +405,7 @@ function box.queue.collect(sno)
 			if it == nil then break end
 			local runat = box.unpack('l',tuple[c_runat])
 			if runat > box.time64() then
+				box.queue.check_clients(sno);
 				break
 			end
 			print(tuple[c_status] .. ": " .. tostring( runat/1E6 ) .. "\n")
@@ -440,8 +465,9 @@ function box.queue.enable(sno)
 	
 	local fiber = box.fiber.create(queue_watcher)
 	
-	print("created fiber ", box.fiber.id(fiber))
+	print("created fiber ", box.fiber.id(fiber), " for queue ", sno);
 	box.queue.enabled[sno] = box.fiber.id( fiber )
+	box.queue.taken[sno] = {}
 	box.fiber.resume(fiber, sno)
 	return
 end
@@ -456,10 +482,12 @@ function box.queue.disable(sno)
 	if not fiber then
 		print("Cannot find fiber by id " .. box.queue.enabled[sno])
 		box.queue.enabled[sno] = nil
+		box.queue.taken[sno] = nil
 		return
 	end
 	print("found created fiber: ", box.fiber.id(fiber))
 	box.fiber.cancel( fiber )
 	box.queue.enabled[sno] = nil
+	box.queue.taken[sno] = nil
 end
 
