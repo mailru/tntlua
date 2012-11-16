@@ -4,7 +4,7 @@
 
 dofile('cnt.lua')
 
-local max_results = 10
+local max_results = 100
 
 --
 -- Search keys with prefix @prefix.
