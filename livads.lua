@@ -21,8 +21,7 @@ function livads_search(prefix)
 	end
 
 	if i > max_results then
-		-- FIXME return user-constructed tuple without inserting to table
-		return box.replace(0, "MAX_RESULT", -1)
+		return { "MAX_RESULT", box.pack('i', -1) }
 	end
 	return unpack(t)
 end
