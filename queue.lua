@@ -125,25 +125,42 @@
 --   buried : i32    how many times task was buried
 --
 
+local cmds = {
+	put      = 0;
+	delete   = 0;
+	take     = 0;
+	ack      = 0;
+	release  = 0;
+	stats    = 0;
+}
+
 if box.queue == nil then
-	box.queue = {}
-	box.queue.taken = {}
-	box.queue.sequence = {}
-	box.queue.enabled = {}
+	box.queue = {
+		taken = {};
+		sequence = {};
+		enabled = {};
+		stat = { cmd = cmds; };
+	}
 else
+	local old = box.queue;
 	local taken = box.queue.taken
 	local enabled = box.queue.enabled
 	box.queue = {}
 	box.queue.sequence = {}
-	if taken then
-		box.queue.taken = taken
+	if old.taken then
+		box.queue.taken = old.taken
 	else
 		box.queue.taken = {}
 	end
-	if enabled then
-		box.queue.enabled = enabled
+	if old.enabled then
+		box.queue.enabled = old.enabled
 	else
 		box.queue.enabled = {}
+	end
+	if old.stat then
+		box.queue.stat = old.stat
+	else
+		box.queue.stat = { cmd = cmds; };
 	end
 end
 
@@ -183,6 +200,7 @@ end
 
 function box.queue.put(sno, tube, prio, delay, ttr, ttl, ...)
 	sno, tube, prio, delay, ttr, ttl = tonumber(sno), tonumber(tube), tonumber(prio), tonumber(delay), tonumber(ttr), tonumber(ttl)
+	box.queue.stat.cmd["put"] = box.queue.stat.cmd["put"] + 1
 	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
 	if prio == nil then prio = 0x7fff end
 	if delay == nil then delay = 0 end
@@ -228,6 +246,7 @@ end
 
 function box.queue.delete(sno, id)
 	sno, id = tonumber(sno), tonumber64(id)
+	box.queue.stat.cmd["delete"] = box.queue.stat.cmd["delete"] + 1
 	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
 	box.queue.taken[sno][ box.pack('l',id) ] = nil
 	return box.space[sno]:delete(id)
@@ -236,6 +255,7 @@ end
 
 function box.queue.take(sno, tube, timeout)
 	sno, tube, timeout = tonumber(sno), tonumber(tube), tonumber(timeout)
+	box.queue.stat.cmd["take"] = box.queue.stat.cmd["take"] + 1
 	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
 	if tube == nil then tube = 0 end
 	local idx = box.space[sno].index[i_ready].idx
@@ -316,6 +336,7 @@ end
 
 function box.queue.ack( sno, id )
 	sno, id = tonumber(sno), tonumber64(id)
+	box.queue.stat.cmd["ack"] = box.queue.stat.cmd["ack"] + 1
 	consumer_check_task(sno,id)
 	box.queue.taken[sno][ box.pack('l',id) ] = nil
 	box.space[sno]:delete( id )
@@ -323,6 +344,7 @@ end
 
 function box.queue.release( sno, id, prio, delay, ttr, ttl )
 	sno, id, prio, delay, ttr, ttl = tonumber(sno), tonumber64(id), tonumber(prio), tonumber(delay), tonumber(ttr), tonumber(ttl)
+	box.queue.stat.cmd["release"] = box.queue.stat.cmd["release"] + 1
 	consumer_check_task(sno,id)
 	local task = box.select(sno, i_pk, id)
 	-- if something is set, then update and recalculate
@@ -491,3 +513,27 @@ function box.queue.disable(sno)
 	box.queue.taken[sno] = nil
 end
 
+function box.queue.stats(sno, tube)
+	if json == nil then
+		error('Install cjson library and plug it on with json=require("cjson")');
+	end
+	box.queue.stat.cmd["stats"] = box.queue.stat.cmd["stats"] + 1
+	sno = tonumber(sno)
+	if tube == nil then
+		return json.encode({
+			total       = box.space[sno]:len();
+			connections = 0;
+			watchers    = 0;
+			-- tubes       = 1; -- TODO
+			cmd = box.queue.stat.cmd;
+		})
+	else
+		return json.encode({
+			total       = box.space[sno].index[1]:count(0);
+			ready       = box.space[sno].index[1]:count(0,'R');
+			taken       = box.space[sno].index[1]:count(0,'T');
+			delayed     = box.space[sno].index[1]:count(0,'D');
+			buried      = box.space[sno].index[1]:count(0,'B');
+		})
+	end
+end
