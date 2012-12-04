@@ -1,13 +1,17 @@
-
+--
 -- autoreply_limiter.lua
 -- Developed by Mail.Ru
+--
+
+--
+-- Index: userid (NUM), email (STR)
 --
 
 local limiter_period = 4*24*3600
 
 function autoreply_limiter_check(userid, email)
   userid = box.unpack('i', userid)
-  time   = os.time(); 
+  local time = os.time()
 
   local tuple = box.select(0, 0, userid, email)
   if tuple == nil then
