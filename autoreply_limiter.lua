@@ -7,7 +7,7 @@
 -- Index: userid (NUM), email (STR)
 --
 
-local limiter_period = 4*24*3600
+local limiter_period = 12*60*60
 
 function autoreply_limiter_check(userid, email)
   userid = box.unpack('i', userid)
