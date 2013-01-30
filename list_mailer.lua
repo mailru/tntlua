@@ -1,12 +1,12 @@
 
--- tuple : (userid, email)
+-- tuple : (listid, email)
 -- function returns list of mailer
 
-function list_mailer(userid)
-  userid = box.unpack('i', userid)
-  
+function list_mailer_get(listid)
+  listid = box.unpack('i', listid)
+
   local result = { }
-  local tuples = { box.select(0, 0, userid) }
+  local tuples = { box.select(0, 0, listid) }
   if tuples == nil then
     return
   else
