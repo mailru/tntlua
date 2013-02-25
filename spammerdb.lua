@@ -17,7 +17,7 @@ function spammerdb_get(userid, stype, ...)
 	for i, email in ipairs(emails) do
 		if #email > 0 then
 			local tuple = box.select(0, 0, userid, email)
-			if tuple ~= nill then
+			if tuple ~= nil then
 				local flags = string.byte(tuple[2]) -- box.unpack('b', tuple[2])
 				local v = get_value(flags, stype)
 				if v > 0 then
