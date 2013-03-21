@@ -23,6 +23,11 @@ function rima_put(key, data)
 	box.auto_increment(0, key, data)
 end
 
+function rima_put_prio(key, data)
+	box.auto_increment(0, key, data)
+	box.replace(2, key)
+end
+
 local function get_random_key()
 	for i = 1,100 do
 		local v = box.space[0].index[0]:random(math.random(4294967296))
@@ -34,8 +39,21 @@ local function get_random_key()
 	return nil
 end
 
+local function get_prio_key()
+	local index = box.space[2].index[0]
+
+	for _, v in index.idx.next, index.idx do
+		local key = v[0]
+		local exists = box.select(1, 0, key)
+		if exists == nil and box.delete(2, key) ~= nil then return key end
+	end
+
+	return nil
+end
+
 local function rima_get_impl()
-	local key = get_random_key()
+	local key = get_prio_key()
+	if key == nil then key = get_random_key() end
 	if key == nil then return true, nil end
 
 	local status, _ = pcall(box.insert, 1, key)
