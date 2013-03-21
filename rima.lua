@@ -54,20 +54,20 @@ end
 local function rima_get_impl()
 	local key = get_prio_key()
 	if key == nil then key = get_random_key() end
-	if key == nil then return true, nil end
+	if key == nil then return true, nil, nil end
 
 	local status, _ = pcall(box.insert, 1, key)
-	if not status then return false, nil end
+	if not status then return false, nil, nil end
 
-	local result = { key }
+	local result = {}
 
-	local tuples = { box.select(0, 1, key) }
-	for _, tuple in pairs(tuples) do
+	local index = box.space[0].index[1]
+	for _, tuple in index.next_equal, index, key do
 		tuple = box.delete(0, tuple[0])
-		if tuple ~= nil then table.insert(result, tuple:slice(2, 3)) end
+		if tuple ~= nil then table.insert(result, tuple[2]) end
 	end
 
-	return true, result
+	return true, key, result
 end
 
 --
@@ -75,10 +75,10 @@ end
 --
 function rima_get()
 	for i = 1,100 do
-		local status, result = rima_get_impl()
+		local status, key, result = rima_get_impl()
 		if status then
 			if result == nil then return end
-			return unpack(result)
+			return key, unpack(result)
 		end
 	end
 end
