@@ -56,7 +56,8 @@ local function rima_get_impl()
 	if key == nil then key = get_random_key() end
 	if key == nil then return true, nil, nil end
 
-	local status, _ = pcall(box.insert, 1, key)
+	local time = os.time()
+	local status, _ = pcall(box.insert, 1, key, time)
 	if not status then return false, nil, nil end
 
 	local result = {}
@@ -64,7 +65,7 @@ local function rima_get_impl()
 	local tuples = { box.select_limit(0, 1, 0, 1000, key) }
 	for _, tuple in pairs(tuples) do
 		tuple = box.delete(0, tuple[0])
-		if tuple ~= nil then table.insert(result, box.tuple.new(tuple[2])) end
+		if tuple ~= nil then table.insert(result, tuple[2]) end
 	end
 
 	return true, key, result
@@ -90,3 +91,25 @@ end
 function rima_done(key)
 	box.delete(1, key)
 end
+
+--
+-- Run expiration of tuples
+--
+
+local function is_expired(args, tuple)
+	if tuple == nil or #tuple <= args.fieldno then
+		return nil
+	end
+	local field = tuple[args.fieldno]
+	local current_time = os.time()
+	local tuple_expire_time = box.unpack('i', field) + args.expiration_time
+	return current_time >= tuple_expire_time
+end
+
+local function delete_expired(spaceno, args, tuple)
+	box.delete(spaceno, tuple[0])
+end
+
+dofile('expirationd.lua')
+
+expirationd.run_task('expire_locks', 1, is_expired, delete_expired, {fieldno = 1, expiration_time = 30*60})
