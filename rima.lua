@@ -61,10 +61,10 @@ local function rima_get_impl()
 
 	local result = {}
 
-	local index = box.space[0].index[1]
-	for _, tuple in index.next_equal, index, key do
+	local tuples = { box.select_limit(0, 1, 0, 1000, key) }
+	for _, tuple in pairs(tuples) do
 		tuple = box.delete(0, tuple[0])
-		if tuple ~= nil then table.insert(result, tuple[2]) end
+		if tuple ~= nil then table.insert(result, box.tuple.new(tuple[2])) end
 	end
 
 	return true, key, result
