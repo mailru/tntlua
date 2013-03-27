@@ -153,8 +153,8 @@ end
 function notification_read(user_id, ring_no)
     local unread_count = notification_unread_count(user_id, ring_no)
     local fieldno = ring0_fieldno + tonumber(ring_no) * 2
-    local tuple = box.update(space_no, user_id, "+p+p",
-                             1, -unread_count, fieldno, -unread_count)
+    local tuple = box.update(space_no, user_id, "-p-p",
+                             1, unread_count, fieldno, unread_count)
     local return_fields = {}
     local k, v = tuple:next()
     local k, v = tuple:next(k) -- skip user id
