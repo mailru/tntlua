@@ -32,12 +32,12 @@ local space_no = 0
 
 local function print_profile(header, profile)
     if not profiles._debug then
-	return
+        return
     end
     print(header)
     print("id = ", profile.id)
     for pref_id, pref_value in pairs(profile.prefs) do
-	print("prefs[", pref_id, "] = ", pref_value)
+        print("prefs[", pref_id, "] = ", pref_value)
     end
 end
 
@@ -50,25 +50,23 @@ local function load_profile(profile_id)
     -- try to find tuple
     local tuple = box.select(space_no, 0, profile_id)
     if tuple ~= nil then
-	-- tuple exists, fill preference list
-	local k, _ = tuple:next() -- skip user id
-	while k ~= nil do
-	    local pref_key, pref_value
-	    -- get preference key
-	    k, pref_key = tuple:next(k)
-	    if k == nil then
-		break
-	    end
-	    pref_key = box.unpack("i", pref_key)
-	    -- get preference value
-	    k, pref_value = tuple:next(k)
-	    if k == nil then
-		break
-	    end
-	    pref_value = box.unpack("i", pref_value)
-	    -- put preference
-	    profile.prefs[pref_key] = pref_value
-	end
+        -- tuple exists, fill preference list
+        local k, _ = tuple:next() -- skip user id
+        while k ~= nil do
+            local pref_key, pref_value
+            -- get preference key
+            k, pref_key = tuple:next(k)
+            if k == nil then
+                break
+            end
+            -- get preference value
+            k, pref_value = tuple:next(k)
+            if k == nil then
+                break
+            end
+            -- put preference
+            profile.prefs[pref_key] = pref_value
+        end
     end
 
     print_profile("load", profile)
@@ -81,10 +79,10 @@ local function store_profile(profile)
     local tuple = { profile.id }
     -- put preference to tuple
     for pref_id, pref_value in pairs(profile.prefs) do
-	-- insert preference id
-	table.insert(tuple, pref_id)
-	-- insert preference value
-	table.insert(tuple, pref_value)
+        -- insert preference id
+        table.insert(tuple, pref_id)
+        -- insert preference value
+        table.insert(tuple, pref_value)
     end
     return box.replace(space_no, unpack(tuple))
 end
@@ -96,41 +94,11 @@ end
 
 profiles = {
     -- enable/disable debug functions
-    _debug = true,
+    _debug = false,
 }
 
 function profile_get(profile_id)
     return box.select(space_no, 0, profile_id)
-end
-
-function profile_set(profile_id, pref_key, pref_value)
-    --
-    -- check input params
-    --
-
-    -- profile id
-    if profile_id == nil then
-	error("profile's id undefied")
-    end
-    -- preference key
-    if pref_key == nil then
-	error("preference key undefined")
-    end
-    -- preference value
-    if pref_value == nil then
-	error("preference value undefined")
-    end
-
-    --
-    -- process
-    --
-
-    -- load profile
-    local profile = load_profile(profile_id)
-    -- set preference
-    profile.prefs[pref_key] = pref_value
-    -- store result
-    return store_profile(profile)
 end
 
 function profile_multiset(profile_id, ...)
@@ -143,7 +111,7 @@ function profile_multiset(profile_id, ...)
 
     -- profile id
     if profile_id == nil then
-	error("profile's id undefied")
+        error("profile's id undefied")
     end
     -- preference list's length
     if pref_list_len == 0 then
@@ -167,8 +135,12 @@ function profile_multiset(profile_id, ...)
     local i, pref_key = next(pref_list)
     local i, pref_value = next(pref_list, i)
     while pref_key ~= nil and pref_value ~= nil do
-	-- set new preference value
-	profile.prefs[pref_key] = pref_value
+        -- erase preference if its new value is empty string
+        if pref_value == '' then
+            pref_value = nil
+        end
+        -- set new preference value
+        profile.prefs[pref_key] = pref_value
         -- go to the next pair
         i, pref_key = next(pref_list, i)
         i, pref_value = next(pref_list, i)
@@ -176,4 +148,8 @@ function profile_multiset(profile_id, ...)
 
     -- store result
     return store_profile(profile)
+end
+
+function profile_set(profile_id, pref_key, pref_value)
+    return profile_multiset(profile_id, pref_key, pref_value)
 end
