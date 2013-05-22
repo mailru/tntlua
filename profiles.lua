@@ -153,3 +153,208 @@ end
 function profile_set(profile_id, pref_key, pref_value)
     return profile_multiset(profile_id, pref_key, pref_value)
 end
+
+-- ========================================================================== --
+-- helper function which loads profile from tuple
+-- ========================================================================== --
+
+-- this function was taken from profiles.lua:load_profile() and should be set in accordance with it
+function load_profile2(tuple)
+    -- init empty profile
+    local profile = {}
+    profile.id = tuple[0]
+    profile.prefs = {}
+
+    if tuple ~= nil then
+        -- tuple exists, fill preference list
+        local k, _ = tuple:next() -- skip user id
+        while k ~= nil do
+            local pref_key, pref_value
+            -- get preference key
+            k, pref_key = tuple:next(k)
+            if k == nil then
+                break
+            end
+            -- get preference value
+            k, pref_value = tuple:next(k)
+            if k == nil then
+                break
+            end
+            -- put preference
+            profile.prefs[pref_key] = pref_value
+        end
+    end
+
+    return profile
+end
+
+-- ========================================================================== --
+-- helper function which helps to delete empty preferences
+-- needs to be called once for old version of profiles.lua
+-- new version no longer produces keys with empty values
+-- ========================================================================== --
+
+function profile_cleanup_empty_preferences()
+    local cnt = 0
+    local n = 0
+    
+    for tpl in box.space[space_no].index[0]:iterator(box.index.ALL) do
+        local profile = load_profile2(tpl)
+        local has_empty = false
+        
+        for k, v in pairs(profile.prefs) do
+            if v == '' then
+                profile.prefs[k] = nil
+                has_empty = true
+            end
+        end
+
+        if has_empty == true then
+            store_profile(profile)
+            cnt = cnt + 1
+        end
+
+        n = n + 1
+        if n == 100 then
+            box.fiber.sleep(0.001)
+            n = 0
+        end
+    end
+
+    print(cnt, ' tuples cleaned from empty keys')
+    return cnt
+end
+
+function profile_cleanup_empty_preferences_all()
+    while profile_cleanup_empty_preferences() ~= 0 do end
+end
+
+-- ========================================================================== --
+-- helper function which loads profile from tuple
+-- ========================================================================== --
+
+-- this function was taken from profiles.lua:load_profile() and should be set in accordance with it
+function load_profile2(tuple)
+    -- init empty profile
+    local profile = {}
+    profile.id = tuple[0]
+    profile.prefs = {}
+
+    if tuple ~= nil then
+        -- tuple exists, fill preference list
+        local k, _ = tuple:next() -- skip user id
+        while k ~= nil do
+            local pref_key, pref_value
+            -- get preference key
+            k, pref_key = tuple:next(k)
+            if k == nil then
+                break
+            end
+            -- get preference value
+            k, pref_value = tuple:next(k)
+            if k == nil then
+                break
+            end
+            -- put preference
+            profile.prefs[pref_key] = pref_value
+        end
+    end
+
+    return profile
+end
+
+-- ========================================================================== --
+-- helper functions which help to delete empty preferences
+-- ========================================================================== --
+
+function profile_cleanup_empty_preferences()
+    local cnt = 0
+    local n = 0
+    
+    for tpl in box.space[space_no].index[0]:iterator(box.index.ALL) do
+        local profile = load_profile2(tpl)
+        local has_empty = false
+        
+        for k, v in pairs(profile.prefs) do
+            if v == '' then
+                profile.prefs[k] = nil
+                has_empty = true
+            end
+        end
+
+        if has_empty == true then
+            store_profile(profile)
+            cnt = cnt + 1
+        end
+
+        n = n + 1
+        if n == 100 then
+            box.fiber.sleep(0.001)
+            n = 0
+        end
+    end
+
+    print(cnt, ' tuples cleaned from empty keys')
+    return cnt
+end
+
+-- ========================================================================== --
+-- cleans up keys with empty string values in every profile
+-- needs to be called once for old version of profiles.lua
+-- new version no longer produces keys with empty string values
+-- ========================================================================== --
+
+function profile_cleanup_empty_preferences_all()
+    while profile_cleanup_empty_preferences() ~= 0 do end
+end
+
+-- ========================================================================== --
+-- helper functions which removes particular key in every profile
+-- ========================================================================== --
+function profile_hexify(str)
+    return (
+        string.gsub(str, "(.)",
+            function (c) return string.format("%02X", string.byte(c)) end
+        )
+    )
+end
+
+function profile_cleanup_key(key)
+    if type(key) ~= "string" then
+        error("bad parameters")
+    end
+
+    local cnt = 0
+    local n = 0
+
+    for tpl in box.space[space_no].index[0]:iterator(box.index.ALL) do
+        local profile = load_profile2(tpl)
+        if profile.prefs[key] ~= nil then
+            print('cleanup_key: ', profile.id, '[', profile_hexify(key), ']', ' = ', profile.prefs[key], ', orig tuple: ', tpl)
+            profile.prefs[key] = nil
+            store_profile(profile)
+            cnt = cnt + 1            
+        end
+
+        n = n + 1
+        if n == 100 then
+            box.fiber.sleep(0.001)
+            n = 0
+        end
+    end
+
+    print(cnt, ' tuples cleaned from key [', profile_hexify(key), ']')
+    return cnt
+end
+
+-- ========================================================================== --
+-- cleans up particular key in every profile
+-- ========================================================================== --
+
+function profile_cleanup_key_all(key)
+    if type(key) ~= "string" then
+        error("bad parameters")
+    end
+
+    while profile_cleanup_key(key) ~= 0 do end
+end
