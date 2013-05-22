@@ -41,32 +41,41 @@ local function print_profile(header, profile)
     end
 end
 
-local function load_profile(profile_id)
-    -- init empty profile
+local function load_profile_from_tuple(tuple)
     local profile = {}
-    profile.id = profile_id
+
+    profile.id = tuple[0]
+    local k, _ = tuple:next() -- skip user id
+
+    -- fill preference list
     profile.prefs = {}
+    while k ~= nil do
+        local pref_key, pref_value
+        -- get preference key
+        k, pref_key = tuple:next(k)
+        if k == nil then break end
+        -- get preference value
+        k, pref_value = tuple:next(k)
+        if k == nil then break end
+        -- put preference
+        profile.prefs[pref_key] = pref_value
+    end
+
+    return profile
+end
+
+local function load_profile(profile_id)
+    local profile = nil
 
     -- try to find tuple
     local tuple = box.select(space_no, 0, profile_id)
     if tuple ~= nil then
-        -- tuple exists, fill preference list
-        local k, _ = tuple:next() -- skip user id
-        while k ~= nil do
-            local pref_key, pref_value
-            -- get preference key
-            k, pref_key = tuple:next(k)
-            if k == nil then
-                break
-            end
-            -- get preference value
-            k, pref_value = tuple:next(k)
-            if k == nil then
-                break
-            end
-            -- put preference
-            profile.prefs[pref_key] = pref_value
-        end
+        profile = load_profile_from_tuple(tuple)
+    else
+        -- init empty profile
+        profile = {}
+        profile.id = profile_id
+        profile.prefs = {}
     end
 
     print_profile("load", profile)
@@ -155,51 +164,17 @@ function profile_set(profile_id, pref_key, pref_value)
 end
 
 -- ========================================================================== --
--- helper function which loads profile from tuple
--- ========================================================================== --
-
--- this function was taken from profiles.lua:load_profile() and should be set in accordance with it
-function load_profile2(tuple)
-    -- init empty profile
-    local profile = {}
-    profile.id = tuple[0]
-    profile.prefs = {}
-
-    if tuple ~= nil then
-        -- tuple exists, fill preference list
-        local k, _ = tuple:next() -- skip user id
-        while k ~= nil do
-            local pref_key, pref_value
-            -- get preference key
-            k, pref_key = tuple:next(k)
-            if k == nil then
-                break
-            end
-            -- get preference value
-            k, pref_value = tuple:next(k)
-            if k == nil then
-                break
-            end
-            -- put preference
-            profile.prefs[pref_key] = pref_value
-        end
-    end
-
-    return profile
-end
-
--- ========================================================================== --
 -- helper functions which help to delete empty preferences
 -- ========================================================================== --
 
-function profile_cleanup_empty_preferences()
+local function profile_cleanup_empty_preferences()
     local cnt = 0
     local n = 0
-    
+
     for tpl in box.space[space_no].index[0]:iterator(box.index.ALL) do
-        local profile = load_profile2(tpl)
+        local profile = load_profile_from_tuple(tpl)
         local has_empty = false
-        
+
         for k, v in pairs(profile.prefs) do
             if v == '' then
                 profile.prefs[k] = nil
@@ -236,7 +211,7 @@ end
 -- ========================================================================== --
 -- helper functions which removes particular key in every profile
 -- ========================================================================== --
-function profile_hexify(str)
+local function profile_hexify(str)
     return (
         string.gsub(str, "(.)",
             function (c) return string.format("%02X", string.byte(c)) end
@@ -244,21 +219,17 @@ function profile_hexify(str)
     )
 end
 
-function profile_cleanup_key(key)
-    if type(key) ~= "string" then
-        error("bad parameters")
-    end
-
+local function profile_cleanup_key(key)
     local cnt = 0
     local n = 0
 
     for tpl in box.space[space_no].index[0]:iterator(box.index.ALL) do
-        local profile = load_profile2(tpl)
+        local profile = load_profile_from_tuple(tpl)
         if profile.prefs[key] ~= nil then
             print('cleanup_key: ', profile.id, '[', profile_hexify(key), ']', ' = ', profile.prefs[key], ', orig tuple: ', tpl)
             profile.prefs[key] = nil
             store_profile(profile)
-            cnt = cnt + 1            
+            cnt = cnt + 1
         end
 
         n = n + 1
