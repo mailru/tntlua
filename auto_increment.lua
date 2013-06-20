@@ -11,7 +11,7 @@ function box.auto_increment(spaceno, ...)
         max = box.unpack(format, max_tuple[0])
     else
         -- first time
-        if box.space[0].index[0].key_field[0].type == "NUM64" then max = tonumber64(max) end
+        if box.space[spaceno].index[0].key_field[0].type == "NUM64" then max = tonumber64(max) end
     end
     return box.insert(spaceno, max + 1, ...)
 end
