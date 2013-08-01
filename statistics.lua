@@ -5,9 +5,39 @@ local sender_ip_space = 3
 local dkim_msgtype_ts_space = 4
 local dkim_senderip_space = 5
 
-field_count = 10
-timeout = 0.006
-max_attempts = 5
+local field_count = 10
+local timeout = 0.006
+local max_attempts = 5
+
+local function increment_stat3(space, key, subject, timestamp)
+    retry = true
+    count = 0
+    while retry do
+        status, result = pcall(box.update, space, key, '=p', field_last, timestamp)
+        if status then
+        --success update or tuple is not exist
+            retry = false
+            if result == nil then
+            --insert new tuple
+                tuple = {}
+                for i = 2, field_last do tuple[i] = 0 end
+                tuple[1] = string.sub(key, -8)
+                tuple[2] = subject
+                tuple[3] = timestamp
+                tuple[4] = timestamp
+                box.insert(space, key, unpack(tuple))
+            end
+        else
+        --exception
+            count = count + 1
+            if count == max_attempts then
+                print("max attempts reached for space="..space.." key="..key)
+                break
+            end
+            box.fiber.sleep(timeout)
+        end
+    end
+end
 
 -- BEG deprecated interface
 
@@ -127,40 +157,6 @@ local function increment_stat2(space, key, element1, element2, users, spam_users
                 tuple[field_count + 2] = element2
                 box.insert(space, key, unpack(tuple))
            end
-        else
-        --exception
-            count = count + 1
-            if count == max_attempts then
-                print("max attempts reached for space="..space.." key="..key)
-                break
-            end
-            box.fiber.sleep(timeout)
-        end
-    end
-end
-
-field_subject = 2
-field_first = 3
-field_last = 4
-
-local function increment_stat3(space, key, subject, timestamp)
-    retry = true
-    count = 0
-    while retry do
-        status, result = pcall(box.update, space, key, '=p', field_last, timestamp)
-        if status then
-        --success update or tuple is not exist
-            retry = false
-            if result == nil then
-            --insert new tuple
-                tuple = {}
-                for i = 2, field_last do tuple[i] = 0 end
-                tuple[1] = string.sub(key, -8)
-                tuple[field_subject] = subject
-                tuple[field_first] = timestamp
-                tuple[field_last] = timestamp
-                box.insert(space, key, unpack(tuple))
-            end
         else
         --exception
             count = count + 1
