@@ -14,18 +14,50 @@
 -- Rima does not return task with already locked keys.
 --
 
+--
+-- Space 0: Remote IMAP Collector Task Queue
+--   Tuple: { unique_id (NUM64), key (STR), task_description (NUM) }
+--   Index 0: TREE { unique_id }
+--   Index 1: TREE { key, unique_id }
+--
+-- Space 1: Locked Keys
+--   Tuple: { key (STR), lock_time (NUM) }
+--   Index 0: TREE { key }
+--
+-- Space 2: Task Priority
+--   Tuple: { key (STR), priority (NUM) }
+--   Index 0: TREE { key }
+--   Index 1: TREE { priority }
+--
+
 math.randomseed(box.time())
 
 --
 -- Put task to the queue.
 --
-function rima_put(key, data)
+local function rima_put_impl(key, data, prio)
 	box.auto_increment(0, key, data)
+	if prio > 0 then
+		local tuple = box.select(2, key)
+		if tuple == nil or ( #tuple > 1 and box.unpack('i', tuple[1]) < prio ) then
+			box.replace(2, key, prio)
+		end
+	end
 end
 
-function rima_put_prio(key, data)
-	box.auto_increment(0, key, data)
-	box.replace(2, key)
+
+function rima_put(key, data) -- deprecated
+	rima_put_impl(key, data, 512)
+end
+
+function rima_put_prio(key, data) -- deprecated
+	rima_put_impl(key, data, 1024)
+end
+
+function rima_put_with_prio(key, data, prio)
+	prio = box.unpack('i', prio)
+
+	rima_put_impl(key, data, prio)
 end
 
 local function get_random_key()
@@ -40,9 +72,10 @@ local function get_random_key()
 end
 
 local function get_prio_key()
-	local index = box.space[2].index[0]
+	local m = box.space[2].index[1].idx:max()
+	if m == nil then return nil end
 
-	for _, v in index.idx.next, index.idx do
+	for v in box.space[2].index[1]:iterator(box.index.LE, box.unpack('i', m[1]) + 1) do
 		local key = v[0]
 		local exists = box.select(1, 0, key)
 		if exists == nil and box.delete(2, key) ~= nil then return key end
