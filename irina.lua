@@ -8,13 +8,52 @@
 --   Index 0: HASH { email }
 --   Index 1: TREE { is_instant, shard_id }
 --
+-- Space 1: Remote IMAP Collector Listeners
+--   Tuple: { shard_id (NUM), addr (STR) }
+--   Index 0: TREE { shard_id }
+--
+
+local function get_collector_address(shardid)
+	local v = box.space[1].index[0]:iterator(box.index.GT, shardid)()
+	if v == nil then return nil end
+
+	local addr = v[1]
+	local ind = addr:find(":")
+	if ind == nil then return nil end
+
+	return addr:sub(0, ind - 1), tonumber(addr:sub(ind + 1))
+end
 
 --
 -- Send signal to Instant Remote IMAP Collector daemon
 --
-local function send_instant_changes(email, userid, enabled)
-	-- TODO
-	print(email .. " [" .. userid .. "] instant mode is " .. enabled)
+local function send_instant_changes(email, userid, shardid, enabled)
+	local host, port = get_collector_address(shardid)
+	if host == nil then return end
+
+	local s = box.socket.tcp()
+	if s == nil then
+		print("can not create imaplistener socket")
+		return
+	end
+
+	if not s:connect(host, port, 0.1) then
+		local _, errstr = s:error()
+		print("can not connect to imaplistener[" .. host .. ":" .. port .. "]: " .. errstr)
+		s:close()
+		return
+	end
+
+	local data = email .. " " .. userid .. " " .. enabled
+	local bytes_sent, status, errno, errstr = s:send(data, 0.1)
+	if bytes_sent ~= #data then
+		local _, errstr = s:error()
+		print("can not send data to imaplistener[" .. host .. ":" .. port .. "]: " .. errstr)
+		s:close()
+		return
+	end
+
+	s:close()
 end
 
 local function update_record(email, set_instant, set_expirable)
@@ -40,7 +79,7 @@ function irina_add_user(email, userid, is_instant, shardid)
 		end
 	end
 
-	if need_send then send_instant_changes(email, userid, 1) end
+	if need_send then send_instant_changes(email, userid, shardid, 1) end
 end
 
 function irina_del_user(email)
@@ -49,7 +88,8 @@ function irina_del_user(email)
 
 	local userid = box.unpack('i', tuple[1])
 	local is_old_instant = box.unpack('i', tuple[2])
-	if is_old_instant == 1 then send_instant_changes(email, userid, 0) end
+	local shardid = box.unpack('i', tuple[5])
+	if is_old_instant == 1 then send_instant_changes(email, userid, shardid, 0) end
 end
 
 local function set_flags_impl(tuple, cond, set_instant, set_expirable)
@@ -57,11 +97,12 @@ local function set_flags_impl(tuple, cond, set_instant, set_expirable)
 	local userid = box.unpack('i', tuple[1])
 	local is_instant = box.unpack('i', tuple[2])
 	local is_expirable = box.unpack('i', tuple[3])
+	local shardid = box.unpack('i', tuple[5])
 
 	if not cond(is_instant, is_expirable) then return end
 	update_record(email, set_instant, set_expirable)
 
-	if is_instant ~= set_instant then send_instant_changes(email, userid, set_instant) end
+	if is_instant ~= set_instant then send_instant_changes(email, userid, shardid, set_instant) end
 end
 
 local function set_flags(email, cond, set_instant, set_expirable)
