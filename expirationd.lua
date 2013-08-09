@@ -59,48 +59,47 @@ end
 -- Task fibers
 -- ------------------------------------------------------------------------- --
 
+local function do_worker_iteration(task)
+    local scan_space = box.space[task.space_no]
+
+    -- full index scan loop
+    local checks = 0
+    for tuple in scan_space.index[0]:iterator(box.index.ALL) do
+        checks = checks + 1
+
+        -- do main work
+        if task.is_tuple_expired(task.args, tuple) then
+            task.tuples_expired = task.tuples_expired + 1
+            task.process_expired_tuple(task.space_no, task.args, tuple)
+        end
+
+        -- find out if the worker can go to sleep
+        if checks >= task.tuples_per_iter then
+            checks = 0
+            if scan_space:len() > 0 then
+                local delay = (task.tuples_per_iter * task.full_scan_time) / scan_space:len()
+
+                if delay > expirationd.constants.max_delay then
+                    delay = expirationd.constants.max_delay
+                end
+                box.fiber.sleep(delay)
+            end
+        end
+    end
+end
+
 local function worker_loop(task)
     -- detach worker from the guardian and attach it to sched fiber
     box.fiber.detach()
     box.fiber.name(task.name)
 
-    local scan_space = box.space[task.space_no]
-    local scan_index = box.space[task.space_no].index[0]
     while true do
-        local checks = 0
-
-        -- full index scan loop
-        for itr, tuple in scan_index.idx.next, scan_index.idx do
-            checks = checks + 1
-
-            -- do main work
-            if task.is_tuple_expired(task.args, tuple) then
-                task.tuples_expired = task.tuples_expired + 1
-                task.process_expired_tuple(task.space_no, task.args, tuple)
-            end
-
-            -- find out if the worker can go to sleep
-            if checks >= task.tuples_per_iter then
-                checks = 0
-                if scan_space:len() > 0 then
-                    local delay = (task.tuples_per_iter * task.full_scan_time)
-                        / scan_space:len()
-
-                    if delay > expirationd.constants.max_delay then
-                        delay = expirationd.constants.max_delay
-                    end
-                    box.fiber.sleep(delay)
-                end
-            end
+        if box.cfg.replication_source == nil then
+            do_worker_iteration(task)
         end
 
-        if scan_space:len() == 0 then
-            -- the space is empty, nothing to do
-            box.fiber.sleep(expirationd.constants.max_delay)
-        elseif task.tuples_per_iter > scan_space:len() then
-            -- iteration is complete, yield
-            box.fiber.sleep(expirationd.constants.max_delay)
-        end
+        -- iteration is complete, yield
+        box.fiber.sleep(expirationd.constants.max_delay)
     end
 end
 
@@ -243,7 +242,9 @@ function expirationd.run_task(name,
 
     -- check, does the task exist
     if task_list[name] ~= nil then
-        error("task '" .. name .. "' already running")
+        print("restart task '" .. name .. "'")
+
+        expirationd.kill_task(name)
     end
     local task = create_task(name)
 
