@@ -37,14 +37,12 @@ math.randomseed(box.time())
 --
 local function rima_put_impl(key, data, prio)
 	box.auto_increment(0, key, data)
-	if prio > 0 then
-		local tuple = box.select(2, key)
-		if tuple == nil or ( #tuple > 1 and box.unpack('i', tuple[1]) < prio ) then
-			box.replace(2, key, prio)
-		end
+
+	local tuple = box.select(2, key)
+	if tuple == nil or ( #tuple > 1 and box.unpack('i', tuple[1]) < prio ) then
+		box.replace(2, key, prio)
 	end
 end
-
 
 function rima_put(key, data) -- deprecated
 	rima_put_impl(key, data, 512)
@@ -71,11 +69,8 @@ local function get_random_key()
 	return nil
 end
 
-local function get_prio_key()
-	local m = box.space[2].index[1].idx:max()
-	if m == nil then return nil end
-
-	for v in box.space[2].index[1]:iterator(box.index.LE, box.unpack('i', m[1]) + 1) do
+local function get_prio_key_impl(cmp, prio)
+	for v in box.space[2].index[1]:iterator(cmp, prio) do
 		local key = v[0]
 		local exists = box.select(1, 0, key)
 		if exists == nil and box.delete(2, key) ~= nil then return key end
@@ -84,14 +79,22 @@ local function get_prio_key()
 	return nil
 end
 
-local function rima_get_impl()
-	local key = get_prio_key()
-	if key == nil then key = get_random_key() end
-	if key == nil then return true, nil, nil end
 
+local function get_prio_key()
+	local m = box.space[2].index[1].idx:max()
+	if m == nil then return nil end
+
+	return get_prio_key_impl(box.index.LE, box.unpack('i', m[1]) + 1)
+end
+
+local function get_prio_key_eq(prio)
+	return get_prio_key_impl(box.index.EQ, prio)
+end
+
+local function get_key_data(key)
 	local time = os.time()
 	local status, _ = pcall(box.insert, 1, key, time)
-	if not status then return false, nil, nil end
+	if not status then return nil end
 
 	local result = {}
 
@@ -101,6 +104,25 @@ local function rima_get_impl()
 		if tuple ~= nil then table.insert(result, tuple[2]) end
 	end
 
+	return result
+end
+
+local function rima_get_impl()
+	local key = get_prio_key()
+	if key == nil then key = get_random_key() end
+	if key == nil then return true, nil, nil end
+
+	local result = get_key_data(key)
+	if result == nil then return false, nil, nil end
+	return true, key, result
+end
+
+local function rima_get_prio_impl(prio)
+	local key = get_prio_key_eq(prio)
+	if key == nil then return true, nil, nil end
+
+	local result = get_key_data(key)
+	if result == nil then return false, nil, nil end
 	return true, key, result
 end
 
@@ -110,6 +132,18 @@ end
 function rima_get()
 	for i = 1,100 do
 		local status, key, result = rima_get_impl()
+		if status then
+			if result == nil then return end
+			return key, unpack(result)
+		end
+	end
+end
+
+function rima_get_with_prio(prio)
+	prio = box.unpack('i', prio)
+
+	for i = 1,100 do
+		local status, key, result = rima_get_prio_impl(prio)
 		if status then
 			if result == nil then return end
 			return key, unpack(result)
