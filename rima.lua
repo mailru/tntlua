@@ -38,7 +38,7 @@ math.randomseed(box.time())
 local function rima_put_impl(key, data, prio)
 	box.auto_increment(0, key, data)
 
-	local tuple = box.select(2, key)
+	local tuple = box.select(2, 0, key)
 	if tuple == nil or ( #tuple > 1 and box.unpack('i', tuple[1]) < prio ) then
 		box.replace(2, key, prio)
 	end
@@ -129,7 +129,7 @@ end
 --
 -- Request tasks from the queue.
 --
-function rima_get()
+function rima_get() -- deprecated
 	for i = 1,100 do
 		local status, key, result = rima_get_impl()
 		if status then
