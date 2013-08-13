@@ -59,7 +59,7 @@ function rima_put_with_prio(key, data, prio)
 end
 
 local function get_random_key()
-	for i = 1,100 do
+	for i = 1,5 do
 		local v = box.space[0].index[0]:random(math.random(4294967296))
 		if v == nil then return nil end -- no tuples in index
 		local key = v[1]
@@ -69,32 +69,36 @@ local function get_random_key()
 	return nil
 end
 
-local function get_prio_key_impl(cmp, prio)
-	for v in box.space[2].index[1]:iterator(cmp, prio) do
-		local key = v[0]
+local function get_prio_key_impl(prio)
+	for i = 1,10 do
+		local v = box.space[0].index[0]:random(math.random(4294967296))
+		if v == nil then return nil end -- no tuples in index
+		local key = v[1]
 		local exists = box.select(1, 0, key)
-		if exists == nil and box.delete(2, key) ~= nil then return key end
+		if exists == nil then
+			local pr = box.select(2, 0, key)
+			if pr ~= nil and box.unpack('i', pr[1]) == prio then
+				return key
+			end
+		end
 	end
-
 	return nil
 end
 
-
 local function get_prio_key()
-	local m = box.space[2].index[1].idx:max()
-	if m == nil then return nil end
-
-	return get_prio_key_impl(box.index.LE, box.unpack('i', m[1]) + 1)
+	return nil
 end
 
 local function get_prio_key_eq(prio)
-	return get_prio_key_impl(box.index.EQ, prio)
+	return get_prio_key_impl(prio)
 end
 
 local function get_key_data(key)
 	local time = os.time()
 	local status, _ = pcall(box.insert, 1, key, time)
 	if not status then return nil end
+
+	box.delete(2, key)
 
 	local result = {}
 
@@ -130,24 +134,26 @@ end
 -- Request tasks from the queue.
 --
 function rima_get() -- deprecated
-	for i = 1,100 do
+	for i = 1,10 do
 		local status, key, result = rima_get_impl()
 		if status then
 			if result == nil then return end
 			return key, unpack(result)
 		end
+		box.fiber.sleep(0.001)
 	end
 end
 
 function rima_get_with_prio(prio)
 	prio = box.unpack('i', prio)
 
-	for i = 1,100 do
+	for i = 1,10 do
 		local status, key, result = rima_get_prio_impl(prio)
 		if status then
 			if result == nil then return end
 			return key, unpack(result)
 		end
+		box.fiber.sleep(0.001)
 	end
 end
 
