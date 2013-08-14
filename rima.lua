@@ -16,7 +16,7 @@
 
 --
 -- Space 0: Remote IMAP Collector Task Queue
---   Tuple: { task_id (NUM64), key (STR), task_description (NUM) }
+--   Tuple: { task_id (NUM64), key (STR), task_description (NUM), add_time (NUM) }
 --   Index 0: TREE { task_id }
 --   Index 1: TREE { key, task_id }
 --
@@ -33,7 +33,7 @@ local no_priority = 4294967295
 --
 local function rima_put_impl(key, data, prio)
 	-- insert task data into the queue
-	box.auto_increment(0, key, data)
+	box.auto_increment(0, key, data, box.time())
 	-- increase priority of the key
 	local pr = box.select(2, 0, key)
 	if pr == nil then
@@ -67,7 +67,7 @@ local function get_prio_key(prio)
 	return nil
 end
 
-local function get_key_data(key)
+local function get_key_data_old(key) -- deprecated
 	if key == nil then return nil end
 
 	local result = {}
@@ -81,6 +81,34 @@ local function get_key_data(key)
 	return result
 end
 
+local function get_key_data(key)
+	if key == nil then return nil end
+
+	local result = {}
+
+	local tuples = { box.select_limit(0, 1, 0, 8000, key) }
+	for _, tuple in pairs(tuples) do
+		tuple = box.delete(0, tuple[0])
+		if tuple ~= nil then
+			local add_time
+			if #tuple > 3 then
+				add_time = box.unpack('i', tuple[3])
+			else
+				add_time = box.time() -- deprecated
+			end
+			table.insert(result, { add_time, tuple[2] })
+		end
+	end
+
+	return result
+end
+
+local function rima_get_prio_impl_old(prio) -- deprecated
+	local key = get_prio_key(prio)
+	local result = get_key_data_old(key)
+	return key, result
+end
+
 local function rima_get_prio_impl(prio)
 	local key = get_prio_key(prio)
 	local result = get_key_data(key)
@@ -90,7 +118,17 @@ end
 --
 -- Request tasks from the queue.
 --
-function rima_get_with_prio(prio)
+function rima_get_with_prio(prio) -- deprecated
+	prio = box.unpack('i', prio)
+
+	for i = 1,10 do
+		local key, result = rima_get_prio_impl_old(prio)
+		if key ~= nil then return key, unpack(result) end
+		box.fiber.sleep(0.001)
+	end
+end
+
+function rima_get_ex(prio)
 	prio = box.unpack('i', prio)
 
 	for i = 1,10 do
