@@ -26,8 +26,6 @@
 --   Index 1: TREE { priority, is_locked }
 --
 
-local no_priority = 4294967295
-
 --
 -- Put task to the queue.
 --
@@ -38,7 +36,7 @@ local function rima_put_impl(key, data, prio)
 	local pr = box.select(2, 0, key)
 	if pr == nil then
 		box.insert(2, key, prio, 0, box.time())
-	elseif box.unpack('i', pr[1]) < prio or box.unpack('i', pr[1]) == no_priority then
+	elseif box.unpack('i', pr[1]) < prio then
 		box.update(2, key, "=p", 1, prio)
 	end
 end
@@ -60,8 +58,8 @@ end
 local function get_prio_key(prio)
 	for v in box.space[2].index[1]:iterator(box.index.EQ, prio, 0) do
 		local key = v[0]
-		-- lock the key and set prio to no_priority
-		box.update(2, key, "=p=p=p", 1, no_priority, 2, 1, 3, box.time())
+		-- lock the key
+		box.update(2, key, "=p=p", 2, 1, 3, box.time())
 		return key
 	end
 	return nil
@@ -86,7 +84,7 @@ local function get_key_data(key)
 
 	local result = {}
 
-	local tuples = { box.select_limit(0, 1, 0, 8000, key) }
+	local tuples = { box.select_limit(0, 1, 0, 2000, key) }
 	for _, tuple in pairs(tuples) do
 		tuple = box.delete(0, tuple[0])
 		if tuple ~= nil then
@@ -96,7 +94,7 @@ local function get_key_data(key)
 			else
 				add_time = box.time() -- deprecated
 			end
-			table.insert(result, { add_time, tuple[2] })
+			table.insert(result, { add_time, tuple[2] } )
 		end
 	end
 
@@ -146,8 +144,8 @@ function rima_done(key)
 	local pr = box.select(2, 0, key)
 	if pr == nil then return end
 
-	if box.unpack('i', pr[1]) == no_priority then
-		-- no tasks added while key was locked
+	if box.select(0, 1, key) == nil then
+		-- no tasks for this key in the queue
 		box.delete(2, key)
 	else
 		box.update(2, key, "=p=p", 2, 0, 3, box.time())
@@ -164,7 +162,8 @@ local function is_expired(args, tuple)
 	end
 
 	-- expire only locked keys
-	if box.unpack('i', tuple[2]) == 0 then return false end
+	if tuple[2] == '' then return false end
+	print("tuple[2] = " .. box.unpack('i', tuple[2]))
 
 	local field = tuple[args.fieldno]
 	local current_time = box.time()
