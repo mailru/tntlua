@@ -163,7 +163,7 @@ local function is_expired(args, tuple)
 
 	-- expire only locked keys
 	if tuple[2] == '' then return false end
-	print("tuple[2] = " .. box.unpack('i', tuple[2]))
+	if box.unpack('i', tuple[2]) == 0 then return false end
 
 	local field = tuple[args.fieldno]
 	local current_time = box.time()
