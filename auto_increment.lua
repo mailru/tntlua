@@ -8,7 +8,7 @@ function box.auto_increment(spaceno, ...)
     if max_tuple ~= nil then
         local fmt = 'i'
         if #max_tuple[0] == 8 then fmt = 'l' end
-        max = box.unpack(format, max_tuple[0])
+        max = box.unpack(fmt, max_tuple[0])
     else
         -- first time
         if box.space[spaceno].index[0].key_field[0].type == "NUM64" then max = tonumber64(max) end
