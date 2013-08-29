@@ -73,7 +73,7 @@ local function get_key_data_old(key) -- deprecated
 
 	local result = {}
 
-	local tuples = { box.select_limit(0, 1, 0, 2000, key) }
+	local tuples = { box.select_limit(0, 1, 0, 1000, key) }
 	for _, tuple in pairs(tuples) do
 		tuple = box.delete(0, tuple[0])
 		if tuple ~= nil then table.insert(result, tuple[2]) end
@@ -87,7 +87,7 @@ local function get_key_data(key)
 
 	local result = {}
 
-	local tuples = { box.select_limit(0, 1, 0, 2000, key) }
+	local tuples = { box.select_limit(0, 1, 0, 1000, key) }
 	for _, tuple in pairs(tuples) do
 		tuple = box.delete(0, tuple[0])
 		if tuple ~= nil then
