@@ -30,6 +30,9 @@
 -- Put task to the queue.
 --
 local function rima_put_impl(key, data, prio)
+	-- TODO Remove workaround
+	key = key:gsub("@external$", "")
+
 	-- insert task data into the queue
 	box.auto_increment(0, key, data, box.time())
 	-- increase priority of the key
