@@ -144,6 +144,9 @@ end
 -- Rima unlocks key and next rima_get() may returns tasks with such key.
 --
 function rima_done(key)
+	-- TODO Remove workaround
+	key = key:gsub("@external$", "")
+
 	local pr = box.select(2, 0, key)
 	if pr == nil then return end
 
