@@ -29,12 +29,6 @@
 -- sno          space number
 -- tube         queue number (default 0)
 -- prio         priority of task (default 0x7ff) the lower value the higher priority
--- delay        if not 0, task execution is postponed
---              for the given timeout (in seconds, may be fractional)
--- ttr          Time-To-Release in seconds (default 300s)
---              How many time give to task to be in state TAKEN until return into READY
--- ttl          Time-To-Live in seconds (default infinity)
---              How long task should remain in the queue until discarded
 -- <tuple data> the rest of the task parameters, are stored
 --              in the tuple data and describe the task itself
 --
@@ -98,11 +92,6 @@
 -- space[X].index[1].key_field[2].type = "NUM"
 -- space[X].index[1].key_field[3].fieldno = 0    # id
 -- space[X].index[1].key_field[3].type = "NUM64"
--- 
--- space[X].index[2].type = "TREE"
--- space[X].index[2].unique = false
--- space[X].index[2].key_field[0].fieldno = 4    # runat
--- space[X].index[2].key_field[0].type = "NUM64"
 
 -- ---------------------------------------------
 -- Background expiration of tasks taken by 
@@ -122,9 +111,6 @@
 --   tube   : i32    [ default 0]
 --   prio   : i32    [ default 0x7fff ]
 --   status : STR[1] { one of 'R' 'T' 'D' 'B' }
---   runat  : i64    {system field} Nearest time in epoch microseconds when task state should be changed
---   ttr    : i64    microseconds
---   ttl    : i64    microseconds
 --   taken  : i32    how many times task was taken
 --   buried : i32    how many times task was buried
 --
@@ -170,7 +156,7 @@ function box.fqueue.id(sno)
 		box.fqueue.sequence[ sno ] = box.fqueue.sequence[ sno ] + 1ULL
 	else
 		local tuple = box.space[sno].index[i_pk]:max()
-		local id = 2^25 -- 33554432
+		local id = 1
 		if tuple ~= nil then
 			id = box.unpack('l',tuple[0]) + 0ULL
 		end
@@ -181,7 +167,9 @@ end
 
 function box.fqueue.put(sno, tube, prio, ...)
 	sno, tube, prio= tonumber(sno), tonumber(tube), tonumber(prio)
-	if not box.fqueue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
+	if not box.fqueue.enabled[sno] then 
+		error("Space ".. sno .. " queue not enabled") 
+	end
 	if prio == nil then prio = 0x7fff end
 	if tube == nil then tube = 0 end
 	local status = 'R'
@@ -200,16 +188,18 @@ end
 
 function box.fqueue.take(sno, tube)
 	sno, tube = tonumber(sno), tonumber(tube)
-	if not box.fqueue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
+	if not box.fqueue.enabled[sno] then 
+		error("Space ".. sno .. " queue not enabled") 
+	end
 	if tube == nil then tube = 0 end
-	local x,one_ready = box.space[sno].index[i_ready]:next_equal( tube,'R' )
+	local one_ready = box.space[sno].index[i_ready]:iterator(box.index.EQ, 0, 'R')()
 	if one_ready == nil then return end
-	print("Selected "..tostring( box.unpack('l',one_ready[0]) ).." for take ")
-	box.fqueue.taken[ one_ready[0] ] = box.fiber.id()
+	-- print("Selected "..tostring( box.unpack('l',one_ready[0]) ).." for take ")
+	box.fqueue.taken[ one_ready[0] ] = box.session.id()
 	return box.update(
 		sno, one_ready[0],
 			"=p+p",
-			-- c_fid, box.fiber.id(),
+			-- c_fid, box.session.id(),
 			c_status, 'T', -- taken
 			c_taken, 1
 	)
@@ -218,14 +208,14 @@ end
 local function consumer_check_task(sno, pid)
 	if not box.fqueue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
 	local taken_by = box.fqueue.taken[ pid ]
-	print("Task "..tostring(box.unpack('l',pid)).." taken by " .. tostring(taken_by))
+	-- print("Task "..tostring(box.unpack('l',pid)).." taken by " .. tostring(taken_by))
 	local task
-	if taken_by == box.fiber.id() then
+	if taken_by == box.session.id() then
 		-- don't select task. if it will be release, then select it inside release
 		-- task = box.select(sno, i_pk, id)
 		return true
 	elseif taken_by then
-		error(string.format( "Task taken by %d. Not you (%d)", taken_by, box.fiber.id() ))
+		error(string.format( "Task taken by %d. Not you (%d)", taken_by, box.session.id() ))
 	else
 		--for k,v in pairs(box.fqueue.taken) do
 		--	print( string.format("Task %s taken by %d", tostring( k ), v) )
@@ -237,14 +227,15 @@ end
 
 function box.fqueue.ack( sno, id )
 	sno, id = tonumber(sno), tonumber64(id)
-	local pid = box.pack('l',id)
+	local pid = box.pack('l', id)
 	consumer_check_task(sno,pid)
-	box.fqueue.taken[ pid ] = nil
-	box.space[sno]:delete( id )
+	box.fqueue.taken[pid] = nil
+	box.space[sno]:delete(id)
 end
 
 function box.fqueue.release( sno, id, prio )
 	sno, id, prio = tonumber(sno), tonumber64(id), tonumber(prio)
+	if prio == nil then prio = 0x7fff end
 	local pid = box.pack('l',id)
 	consumer_check_task(sno,pid)
 	local task = box.select(sno, i_pk, id)
@@ -254,38 +245,27 @@ function box.fqueue.release( sno, id, prio )
 	end
 	
 	box.fqueue.taken[ pid ] = nil
-	return box.update(sno, id,
-		"=p=p=p=p=p",
-		c_prio, prio,
-		c_status, 'R',
-		c_runat, runat,
-		c_ttr, ttr,
-		c_ttl, ttl
-	)
+	return box.update(sno, id, "=p=p", c_prio, prio, c_status, 'R')
 
 end
 
-function box.fqueue.collect(sno)
+function box.fqueue.collect(sno, tube)
 	sno = tonumber(sno)
-	if not box.fqueue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
-	local idx = box.space[sno].index[i_ready]
-	do
-		local it,tuple = idx:next_equal( tube,'T' )
-		while it do
-			if tuple[c_status] ~= 'T' then break end
-			if not box.fqueue.taken[ tuple[0] ] or not box.fiber.find( box.fqueue.taken[ tuple[0] ] ) then
-				print(string.format( "Return task %s to ready. No fiber %d", tostring( box.unpack('l', tuple[0]) ), box.fqueue.taken[ tuple[0] ] ))
-				box.fqueue.taken[ tuple[0] ] = nil
-				box.update( sno,tuple[0],
-					"=p",
-					c_status, 'R'
-				)
-			end
-			it,tuple = idx:next(it)
+	if not box.fqueue.enabled[sno] then 
+		-- error("Space ".. sno .. " queue not enabled") 
+		return
+	end
+
+	for tuple in box.space[sno].index[i_ready]:iterator(box.index.EQ, tube, 'T') do 
+		if tuple[c_status] ~= 'T' then 
+			break 
+		end
+		if not box.fqueue.taken[tuple[0]] or box.session.exists(box.fqueue.taken[tuple[0]]) ~= 1 then
+			-- print(string.format( "Return task %s to ready. No fiber %d", tostring( box.unpack('l', tuple[0]) ), box.fqueue.taken[ tuple[0] ] ))
+			box.fqueue.taken[tuple[0]] = nil
+			box.update(sno,tuple[0], "=p", c_status, 'R')
 		end
 	end
-	-- collectgarbage("step")
-	return
 end
 
 local function queue_watcher(sno)
@@ -294,12 +274,10 @@ local function queue_watcher(sno)
 	box.fiber.name("box.fqueue.watcher["..sno.."]")
 	print("Starting queue watcher for space "..sno)
 	while true do
-		-- box.fiber.testcancel()
-		--for i = 1,100,1 do
-		box.fqueue.collect(sno)
-		--end
+		for i = 0,10,1 do
+			box.fqueue.collect(sno, i)
+		end
 		box.fiber.sleep(0.1)
-		--box.fiber.sleep(0)
 	end
 end
 
@@ -331,4 +309,3 @@ function box.fqueue.disable(sno)
 	box.fiber.cancel( fiber )
 	box.fqueue.enabled[sno] = nil
 end
-
