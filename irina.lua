@@ -114,7 +114,7 @@ end
 
 function irina_set_instant(email)
 	set_flags(email,
-		function(i, e) print (i .. e); return i == 0 or e == 1 end,
+		function(i, e) return i == 0 or e == 1 end,
 		1, 0)
 end
 
