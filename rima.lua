@@ -36,7 +36,7 @@ local function rima_put_impl(key, data, prio)
 	-- insert task data into the queue
 	box.auto_increment(0, key, data, box.time())
 	-- increase priority of the key
-	local pr = box.select(2, 0, key)
+	local pr = box.select_limit(2, 0, 0, 1, key)
 	if pr == nil then
 		box.insert(2, key, prio, 0, box.time())
 	elseif box.unpack('i', pr[1]) < prio then
@@ -46,10 +46,6 @@ end
 
 function rima_put(key, data) -- deprecated
 	rima_put_impl(key, data, 512)
-end
-
-function rima_put_prio(key, data) -- deprecated
-	rima_put_impl(key, data, 1024)
 end
 
 function rima_put_with_prio(key, data, prio)
@@ -66,20 +62,6 @@ local function get_prio_key(prio)
 		return key
 	end
 	return nil
-end
-
-local function get_key_data_old(key) -- deprecated
-	if key == nil then return nil end
-
-	local result = {}
-
-	local tuples = { box.select_limit(0, 1, 0, 1000, key) }
-	for _, tuple in pairs(tuples) do
-		tuple = box.delete(0, tuple[0])
-		if tuple ~= nil then table.insert(result, tuple[2]) end
-	end
-
-	return result
 end
 
 local function get_key_data(key)
@@ -104,12 +86,6 @@ local function get_key_data(key)
 	return result
 end
 
-local function rima_get_prio_impl_old(prio) -- deprecated
-	local key = get_prio_key(prio)
-	local result = get_key_data_old(key)
-	return key, result
-end
-
 local function rima_get_prio_impl(prio)
 	local key = get_prio_key(prio)
 	local result = get_key_data(key)
@@ -119,16 +95,6 @@ end
 --
 -- Request tasks from the queue.
 --
-function rima_get_with_prio(prio) -- deprecated
-	prio = box.unpack('i', prio)
-
-	for i = 1,10 do
-		local key, result = rima_get_prio_impl_old(prio)
-		if key ~= nil then return key, unpack(result) end
-		box.fiber.sleep(0.001)
-	end
-end
-
 function rima_get_ex(prio)
 	prio = box.unpack('i', prio)
 
@@ -147,10 +113,10 @@ function rima_done(key)
 	-- TODO Remove workaround
 	key = key:gsub("@external$", "")
 
-	local pr = box.select(2, 0, key)
+	local pr = box.select_limit(2, 0, 0, 1, key)
 	if pr == nil then return end
 
-	if box.select(0, 1, key) == nil then
+	if box.select_limit(0, 1, 0, 1, key) == nil then
 		-- no tasks for this key in the queue
 		box.delete(2, key)
 	else
@@ -168,7 +134,6 @@ local function is_expired(args, tuple)
 	end
 
 	-- expire only locked keys
-	if tuple[2] == '' then return false end
 	if box.unpack('i', tuple[2]) == 0 then return false end
 
 	local field = tuple[args.fieldno]

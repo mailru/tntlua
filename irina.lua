@@ -66,7 +66,7 @@ function irina_add_user(email, userid, is_instant, shardid)
 	shardid = box.unpack('i', shardid)
 
 	local need_send = false
-	local tuple = box.select(0, 0, email)
+	local tuple = box.select_limit(0, 0, 0, 1, email)
 	if tuple == nil then
 		box.insert(0, email, userid, is_instant, 0, box.time(), shardid)
 		need_send = (is_instant == 1)
@@ -107,7 +107,7 @@ local function set_flags_impl(tuple, cond, set_instant, set_expirable)
 end
 
 local function set_flags(email, cond, set_instant, set_expirable)
-	local tuple = box.select(0, 0, email)
+	local tuple = box.select_limit(0, 0, 0, 1, email)
 	if tuple == nil then return end
 	set_flags_impl(tuple, cond, set_instant, set_expirable)
 end
@@ -130,33 +130,22 @@ function irina_set_online(email)
 		1, 1)
 end
 
-local function get_users_impl(shardid, is_instant)
-	local result = {}
-	local tuples = { box.select(0, 1, is_instant, shardid) }
-	for _, tuple in pairs(tuples) do table.insert(result, { tuple[0], box.unpack('i', tuple[1]) }) end
-	return result
-end
-
-function irina_get_instant_users(shardid) -- deprecated
-	shardid = box.unpack('i', shardid)
-	local result = get_users_impl(shardid, 1)
-	return unpack(result)
-end
-
 function irina_get_instant_users_ex(shardid)
 	shardid = box.unpack('i', shardid)
-
 	local result = {}
-	local tuples = { box.select(0, 1, 1, shardid) }
-	for _, tuple in pairs(tuples) do table.insert(result, { tuple[0], box.unpack('i', tuple[1]), box.unpack('i', tuple[3]) }) end
-
-	return unpack(result)
+	for tuple in box.space[0].index[1]:iterator(box.index.EQ, 1, shardid) do
+		table.insert(result, { tuple[0], box.unpack('i', tuple[1]), box.unpack('i', tuple[3]) })
+	end
+	return result
 end
 
 function irina_get_usual_users(shardid)
 	shardid = box.unpack('i', shardid)
-	local result = get_users_impl(shardid, 0)
-	return unpack(result)
+	local result = {}
+	for tuple in box.space[0].index[1]:iterator(box.index.EQ, 0, shardid) do
+		table.insert(result, { tuple[0], box.unpack('i', tuple[1]) })
+	end
+	return result
 end
 
 local function is_expired(args, tuple)
