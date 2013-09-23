@@ -125,6 +125,23 @@ function rima_done(key)
 end
 
 --
+-- Explicitly lock tasks for the key.
+--
+function rima_lock(key)
+	local pr = box.select_limit(2, 0, 0, 1, key)
+	if pr ~= nil and box.unpack('i', pr[2]) > 0 then return 0 end
+
+	-- lock the key
+	if pr ~= nil then
+		box.update(2, key, "=p=p", 2, 1, 3, box.time())
+	else
+		box.insert(2, key, 0, 1, box.time())
+	end
+
+	return 1
+end
+
+--
 -- Run expiration of tuples
 --
 
