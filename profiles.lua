@@ -337,7 +337,7 @@ function profile_print_int64_key(key_id)
     )
 end
 
-function profile_print_specific_key(key_id, key_val, n)
+function profile_print_specific_key(key_id, key_val)
     if box.cfg.replication_source == nil then error("replica api only") end
 
     local str_key_id = box.pack("w", key_id)
@@ -380,7 +380,7 @@ end
 
 function profile_print_specific_int_key_bit(key_id, bit_n)
     if box.cfg.replication_source == nil then error("replica api only") end
-    if bit_n < 0 or bit_n > 64 then  error("bad parameters") end
+    if bit_n < 0 or bit_n > 31 then  error("bad parameters") end
     
     local str_key_id = box.pack("w", key_id)
     profile_apply_func(
@@ -393,7 +393,7 @@ function profile_print_specific_int_key_bit(key_id, bit_n)
                 return
             end
             if bit.band(box.unpack("i", p.prefs[str_key_id]), bit.lshift(1, bit_n)) ~= 0 then 
-                print("user_id: ", profile_id_to_int(p.id), "id: ", key_id, " val: ", box.unpack("i", p.prefs[str_key_id])) 
+                print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", box.unpack("i", p.prefs[str_key_id])) 
             end 
         end
     )
@@ -401,7 +401,7 @@ end
 
 function profile_print_specific_int64_key_bit(key_id, bit_n)
     if box.cfg.replication_source == nil then error("replica api only") end
-    if bit_n < 0 or bit_n > 64 then  error("bad parameters") end
+    if bit_n < 0 or bit_n > 63 then  error("bad parameters") end
 
     local str_key_id = box.pack("w", key_id)
     profile_apply_func(
@@ -414,14 +414,14 @@ function profile_print_specific_int64_key_bit(key_id, bit_n)
                 return
             end
             local n = 0
-            if bit_n > 32 then
+            if bit_n >= 32 then
                 bit_n = bit_n - 32
                 n = box.unpack("i", p.prefs[str_key_id]:sub(-4))
             else
                 n = box.unpack("i", p.prefs[str_key_id]:sub(1, 4))
             end
             if bit.band(n, bit.lshift(1, bit_n)) ~= 0 then
-                print("user_id: ", profile_id_to_int(p.id), "id: ", key_id, " val: ", box.unpack("l", p.prefs[str_key_id]))
+                print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", box.unpack("l", p.prefs[str_key_id]))
             end
         end
     )
