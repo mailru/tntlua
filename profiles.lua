@@ -273,12 +273,12 @@ local function profile_id_to_int(id)
     end
 end
 
-local function profile_apply_func(func)
+local function profile_apply_func(func, ...)
     local cnt = 0
 
     for tpl in box.space[space_no].index[0]:iterator(box.index.ALL) do
         local profile = load_profile_from_tuple(tpl)
-        func(profile)
+        func(profile, ...)
 
         cnt = cnt + 1
         if cnt == 1000 then
@@ -291,61 +291,64 @@ end
 function profile_print_str_key(key_id)
     if box.cfg.replication_source == nil then error("replica api only") end
 
-    local str_key_id = box.pack("w", key_id)
     profile_apply_func(
-        function(p) 
-            print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", string.format("%s", p.prefs[str_key_id])) 
-        end
+        function(p, key_id)
+            local str_key_id = box.pack("w", key_id)
+            print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", string.format("%s", p.prefs[str_key_id]))
+        end,
+        key_id
     )
 end
 
 function profile_print_int_key(key_id)
     if box.cfg.replication_source == nil then error("replica api only") end
 
-    local str_key_id = box.pack("w", key_id)
     profile_apply_func(
-        function(p) 
+        function(p, key_id)
+            local str_key_id = box.pack("w", key_id)
             local val = "nil"
-            if p.prefs[str_key_id] ~= nil then 
+            if p.prefs[str_key_id] ~= nil then
                 if #p.prefs[str_key_id] ~= 4 then
                     print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: BAD")
                     return
                 end
-                val = box.unpack("i", p.prefs[str_key_id]) 
+                val = box.unpack("i", p.prefs[str_key_id])
             end
-            print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", val) 
-        end
+            print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", val)
+        end,
+        key_id
     )
 end
 
 function profile_print_int64_key(key_id)
     if box.cfg.replication_source == nil then error("replica api only") end
 
-    local str_key_id = box.pack("w", key_id)
     profile_apply_func(
-            function(p) 
-                local val = "nil"
-                if p.prefs[str_key_id] ~= nil then 
-                    if #p.prefs[str_key_id] ~= 8 then
-                        print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: BAD")
-                        return
-                    end
-                    val = tnt_bug_i64(box.unpack("l", p.prefs[str_key_id]))
+        function(p, key_id)
+            local str_key_id = box.pack("w", key_id)
+            local val = "nil"
+            if p.prefs[str_key_id] ~= nil then
+                if #p.prefs[str_key_id] ~= 8 then
+                    print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: BAD")
+                    return
                 end
-                print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", val) 
+                val = tnt_bug_i64(box.unpack("l", p.prefs[str_key_id]))
             end
+            print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", val)
+        end,
+        key_id
     )
 end
 
 function profile_print_specific_key(key_id, key_val)
     if box.cfg.replication_source == nil then error("replica api only") end
 
-    local str_key_id = box.pack("w", key_id)
     profile_apply_func(
-        function(p) 
-            if p.prefs[str_key_id] == key_val then 
-                print("user_id: ", profile_id_to_int(p.id), "id: ", key_id, " val: ", key_val) 
-            end 
+        function(p)
+            local str_key_id = box.pack("w", key_id)
+            if p.prefs[str_key_id] == key_val then
+                print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", key_val)
+            end
         end
     )
 end
@@ -353,28 +356,34 @@ end
 function profile_print_specific_int_key(key_id, key_val)
     if box.cfg.replication_source == nil then error("replica api only") end
 
-    local str_key_id = box.pack("w", key_id)
-    local str_key_val = box.pack("i", key_val)
     profile_apply_func(
-        function(p) 
-            if p.prefs[str_key_id] == str_key_val then 
-                print("user_id: ", profile_id_to_int(p.id), "id: ", key_id, " val: ", key_val) 
-            end 
-        end
+        function(p, key_id, key_val)
+            local str_key_id = box.pack("w", key_id)
+            local str_key_val = box.pack("i", key_val)
+
+            if p.prefs[str_key_id] == str_key_val then
+                print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", key_val)
+            end
+        end,
+        key_id,
+        key_val
     )
 end
 
 function profile_print_specific_int64_key(key_id, key_val)
     if box.cfg.replication_source == nil then error("replica api only") end
 
-    local str_key_id = box.pack("w", key_id)
-    local str_key_val = box.pack("l", key_val)
     profile_apply_func(
-        function(p) 
-            if p.prefs[str_key_id] == str_key_val then 
-                print("user_id: ", profile_id_to_int(p.id), "id: ", key_id, " val: ", key_val) 
-            end 
-        end
+        function(p, key_id, key_val)
+            local str_key_id = box.pack("w", key_id)
+            local str_key_val = box.pack("l", key_val)
+
+            if p.prefs[str_key_id] == str_key_val then
+                print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", key_val)
+            end
+        end,
+        key_id,
+        key_val
     )
 end
 
@@ -382,20 +391,22 @@ function profile_print_specific_int_key_bit(key_id, bit_n)
     if box.cfg.replication_source == nil then error("replica api only") end
     if bit_n < 0 or bit_n > 31 then  error("bad parameters") end
     
-    local str_key_id = box.pack("w", key_id)
     profile_apply_func(
-        function(p) 
-            if p.prefs[str_key_id] == nil then 
-                return 
+        function(p, key_id, bit_n)
+            local str_key_id = box.pack("w", key_id)
+            if p.prefs[str_key_id] == nil then
+                return
             end
             if #p.prefs[str_key_id] ~= 4 then
                 print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: BAD")
                 return
             end
-            if bit.band(box.unpack("i", p.prefs[str_key_id]), bit.lshift(1, bit_n)) ~= 0 then 
-                print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", box.unpack("i", p.prefs[str_key_id])) 
-            end 
-        end
+            if bit.band(box.unpack("i", p.prefs[str_key_id]), bit.lshift(1, bit_n)) ~= 0 then
+                print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", box.unpack("i", p.prefs[str_key_id]))
+            end
+        end,
+        key_id,
+        bit_n
     )
 end
 
@@ -403,11 +414,11 @@ function profile_print_specific_int64_key_bit(key_id, bit_n)
     if box.cfg.replication_source == nil then error("replica api only") end
     if bit_n < 0 or bit_n > 63 then  error("bad parameters") end
 
-    local str_key_id = box.pack("w", key_id)
     profile_apply_func(
-        function(p)
-            if p.prefs[str_key_id] == nil then 
-                return 
+        function(p, key_id, bit_n)
+            local str_key_id = box.pack("w", key_id)
+            if p.prefs[str_key_id] == nil then
+                return
             end
             if #p.prefs[str_key_id] ~= 8 then
                 print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: BAD")
@@ -423,6 +434,40 @@ function profile_print_specific_int64_key_bit(key_id, bit_n)
             if bit.band(n, bit.lshift(1, bit_n)) ~= 0 then
                 print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", box.unpack("l", p.prefs[str_key_id]))
             end
-        end
+        end,
+        key_id,
+        bit_n
+    )
+end
+
+function profile_print_specific_str_int_key_bit(key_id, bit_n)
+    if box.cfg.replication_source == nil then error("replica api only") end
+    if bit_n < 0 or bit_n > 63 then  error("bad parameters") end
+
+    profile_apply_func(
+        function(p, key_id, bit_n)
+            local str_key_id = box.pack("w", key_id)
+            if p.prefs[str_key_id] == nil then
+                return
+            end
+            local n64 = tonumber64(p.prefs[str_key_id])
+            if n64 == nil or n64 < 0 then
+                print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: BAD")
+                return
+            end
+            local n64str = box.pack("l", n64)
+            local n = 0
+            if bit_n >= 32 then
+                bit_n = bit_n - 32
+                n = box.unpack("i", n64str:sub(-4))
+            else
+                n = box.unpack("i", n64str:sub(1, 4))
+            end
+            if bit.band(n, bit.lshift(1, bit_n)) ~= 0 then
+                print("user_id: ", profile_id_to_int(p.id), " id: ", key_id, " val: ", p.prefs[str_key_id])
+            end
+        end,
+        key_id,
+        bit_n
     )
 end
