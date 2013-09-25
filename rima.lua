@@ -23,7 +23,7 @@
 -- Space 2: Task Priority
 --   Tuple: { key (STR), priority (NUM), is_locked (NUM), lock_time (NUM) }
 --   Index 0: TREE { key }
---   Index 1: TREE { priority, is_locked }
+--   Index 1: TREE { priority, is_locked, lock_time }
 --
 
 --
@@ -55,41 +55,28 @@ function rima_put_with_prio(key, data, prio)
 end
 
 local function get_prio_key(prio)
-	for v in box.space[2].index[1]:iterator(box.index.EQ, prio, 0) do
-		local key = v[0]
-		-- lock the key
-		box.update(2, key, "=p=p", 2, 1, 3, box.time())
-		return key
-	end
-	return nil
+	local v = box.select_limit(2, 1, 0, 1, prio, 0)
+	if v == nil then return nil end
+
+	-- lock the key
+	local key = v[0]
+	box.update(2, key, "=p=p", 2, 1, 3, box.time())
+
+	return key
 end
 
 local function get_key_data(key)
-	if key == nil then return nil end
-
-	local result = {}
+	local result = { key }
 
 	local tuples = { box.select_limit(0, 1, 0, 1000, key) }
 	for _, tuple in pairs(tuples) do
 		tuple = box.delete(0, tuple[0])
 		if tuple ~= nil then
-			local add_time
-			if #tuple > 3 then
-				add_time = box.unpack('i', tuple[3])
-			else
-				add_time = box.time() -- deprecated
-			end
-			table.insert(result, { add_time, tuple[2] } )
+			table.insert(result, { box.unpack('i', tuple[3]), tuple[2] } )
 		end
 	end
 
 	return result
-end
-
-local function rima_get_prio_impl(prio)
-	local key = get_prio_key(prio)
-	local result = get_key_data(key)
-	return key, result
 end
 
 --
@@ -98,11 +85,9 @@ end
 function rima_get_ex(prio)
 	prio = box.unpack('i', prio)
 
-	for i = 1,10 do
-		local key, result = rima_get_prio_impl(prio)
-		if key ~= nil then return key, unpack(result) end
-		box.fiber.sleep(0.001)
-	end
+	local key = get_prio_key(prio)
+	if key == nil then return nil end
+	return get_key_data(key)
 end
 
 --
