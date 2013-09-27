@@ -70,7 +70,7 @@ local function get_key_data(key)
 
 	local tuples = { box.select_limit(0, 1, 0, 1000, key) }
 	for _, tuple in pairs(tuples) do
-		tuple = box.delete(0, tuple[0])
+		tuple = box.delete(0, box.unpack('l', tuple[0]))
 		if tuple ~= nil then
 			table.insert(result, { box.unpack('i', tuple[3]), tuple[2] } )
 		end
@@ -86,7 +86,7 @@ function rima_get_ex(prio)
 	prio = box.unpack('i', prio)
 
 	local key = get_prio_key(prio)
-	if key == nil then return nil end
+	if key == nil then return end
 	return get_key_data(key)
 end
 
