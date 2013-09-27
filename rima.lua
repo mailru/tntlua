@@ -87,7 +87,7 @@ function rima_get_ex(prio)
 
 	local key = get_prio_key(prio)
 	if key == nil then return end
-	return get_key_data(key)
+	return unpack(get_key_data(key))
 end
 
 --
