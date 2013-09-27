@@ -290,6 +290,7 @@ end
 
 function profile_print_str_key(key_id)
     if box.cfg.replication_source == nil then error("replica api only") end
+    if type(key_id) == "string" then key_id = tonumber(key_id) end
 
     profile_apply_func(
         function(p, key_id)
@@ -302,6 +303,7 @@ end
 
 function profile_print_int_key(key_id)
     if box.cfg.replication_source == nil then error("replica api only") end
+    if type(key_id) == "string" then key_id = tonumber(key_id) end
 
     profile_apply_func(
         function(p, key_id)
@@ -322,6 +324,7 @@ end
 
 function profile_print_int64_key(key_id)
     if box.cfg.replication_source == nil then error("replica api only") end
+    if type(key_id) == "string" then key_id = tonumber(key_id) end
 
     profile_apply_func(
         function(p, key_id)
@@ -342,6 +345,8 @@ end
 
 function profile_print_specific_key(key_id, key_val)
     if box.cfg.replication_source == nil then error("replica api only") end
+    if type(key_id) == "string" then key_id = tonumber(key_id) end
+    if type(key_val) == "string" then key_val = tonumber(key_val) end
 
     profile_apply_func(
         function(p)
@@ -355,6 +360,8 @@ end
 
 function profile_print_specific_int_key(key_id, key_val)
     if box.cfg.replication_source == nil then error("replica api only") end
+    if type(key_id) == "string" then key_id = tonumber(key_id) end
+    if type(key_val) == "string" then key_val = tonumber(key_val) end
 
     profile_apply_func(
         function(p, key_id, key_val)
@@ -372,6 +379,8 @@ end
 
 function profile_print_specific_int64_key(key_id, key_val)
     if box.cfg.replication_source == nil then error("replica api only") end
+    if type(key_id) == "string" then key_id = tonumber(key_id) end
+    if type(key_val) == "string" then key_val = tonumber(key_val) end
 
     profile_apply_func(
         function(p, key_id, key_val)
@@ -389,6 +398,8 @@ end
 
 function profile_print_specific_int_key_bit(key_id, bit_n)
     if box.cfg.replication_source == nil then error("replica api only") end
+    if type(key_id) == "string" then key_id = tonumber(key_id) end
+    if type(bit_n) == "string" then bit_n = tonumber(bit_n) end
     if bit_n < 0 or bit_n > 31 then  error("bad parameters") end
     
     profile_apply_func(
@@ -412,6 +423,8 @@ end
 
 function profile_print_specific_int64_key_bit(key_id, bit_n)
     if box.cfg.replication_source == nil then error("replica api only") end
+    if type(key_id) == "string" then key_id = tonumber(key_id) end
+    if type(bit_n) == "string" then bit_n = tonumber(bit_n) end
     if bit_n < 0 or bit_n > 63 then  error("bad parameters") end
 
     profile_apply_func(
@@ -442,6 +455,8 @@ end
 
 function profile_print_specific_str_int_key_bit(key_id, bit_n)
     if box.cfg.replication_source == nil then error("replica api only") end
+    if type(key_id) == "string" then key_id = tonumber(key_id) end
+    if type(bit_n) == "string" then bit_n = tonumber(bit_n) end
     if bit_n < 0 or bit_n > 63 then  error("bad parameters") end
 
     profile_apply_func(
