@@ -13,47 +13,176 @@
 --   Index 0: TREE { shard_id }
 --
 
-local function get_collector_address(shardid)
-	local v = box.space[1].index[0]:iterator(box.index.GT, shardid)()
-	if v == nil then return nil end
-
-	local addr = v[1]
+local function parse_addr(addr)
 	local ind = addr:find(":")
 	if ind == nil then return nil end
 
 	return addr:sub(0, ind - 1), tonumber(addr:sub(ind + 1))
 end
 
---
--- Send signal to Instant Remote IMAP Collector daemon
---
-local function send_instant_changes(email, userid, shardid, enabled, expirable)
-	local host, port = get_collector_address(shardid)
-	if host == nil then return end
-
+local function send_collector_cmd(addr, cmd)
 	local s = box.socket.tcp()
 	if s == nil then
-		print("can not create imaplistener socket")
-		return
+		print("can not create collector socket")
+		return false
 	end
+
+	local host, port = parse_addr(addr)
 
 	if not s:connect(host, port, 0.1) then
 		local _, errstr = s:error()
-		print("can not connect to imaplistener[" .. host .. ":" .. port .. "]: " .. errstr)
+		print("can not connect to collector[" .. host .. ":" .. port .. "]: " .. errstr)
 		s:close()
-		return
+		return false
 	end
 
-	local data = email .. " " .. userid .. " " .. enabled .. " " .. expirable
 	local bytes_sent, status, errno, errstr = s:send(data, 0.1)
 	if bytes_sent ~= #data then
 		local _, errstr = s:error()
-		print("can not send data to imaplistener[" .. host .. ":" .. port .. "]: " .. errstr)
+		print("can not send data to collector[" .. host .. ":" .. port .. "]: " .. errstr)
 		s:close()
+		return false
+	end
+
+	s:shutdown(box.socket.SHUT_RDWR)
+	s:close()
+	return true
+end
+
+local function get_collector_address(shardid)
+	local v = box.select_limit(1, 0, 0, 1, shardid)
+	if v == nil then return nil end
+	return v[1]
+end
+
+--
+-- Send signals to Instant Remote IMAP Collector daemon
+--
+local function send_change_status(email, userid, shardid, enabled, expirable)
+	local addr = get_collector_address(shardid)
+	if addr == nil then return end
+
+	local data = email .. " " .. userid .. " " .. enabled .. " " .. expirable
+	send_collector_cmd(addr, data)
+end
+local function send_add_shard(addr, shardid)
+	local data = "add_shard " .. shardid
+	send_collector_cmd(addr, data)
+end
+local function send_del_shard(addr, shardid)
+	local data = "del_shard " .. shardid
+	send_collector_cmd(addr, data)
+end
+
+local function get_table_size(t)
+	local n = 0
+	for _, _ in pairs(t) do n = n + 1 end
+	return n
+end
+
+function irina_add_collector(addr, notify_added_shard)
+	notify_added_shard = tonumber(notify_added_shard)
+
+	local addrs = {}
+	for tuple in box.space[1].index[0]:iterator(box.index.ALL) do
+		local curr_addr = tuple[1]
+		if curr_addr == addr then
+			print("already has collector with addr " .. addr)
+			return
+		end
+		if addrs[curr_addr] == nil then addrs[curr_addr] = 1
+		else addrs[curr_addr] = addrs[curr_addr] + 1 end
+	end
+
+	local n_collectors = get_table_size(addrs)
+
+	if n_collectors == 0 then
+		for i = 0, 1023 do
+			print("bind shard #" .. i .. " to " .. addr)
+			box.insert(1, i, addr)
+			if notify_added_shard ~= 0 then send_add_shard(addr, i) end
+		end
 		return
 	end
 
-	s:close()
+	local new_count = 1024 / (n_collectors + 1)
+
+	for tuple in box.space[1].index[0]:iterator(box.index.ALL) do
+		local curr_shardid = box.unpack('i', tuple[0])
+		local curr_addr = tuple[1]
+
+		if addrs[curr_addr] > new_count then
+			addrs[curr_addr] = addrs[curr_addr] - 1
+			print("rebind shard #" .. curr_shardid .. " from " .. curr_addr .. " to " .. addr)
+			box.replace(1, curr_shardid, addr)
+			send_del_shard(curr_addr, curr_shardid)
+			if notify_added_shard ~= 0 then
+				box.fiber.sleep(0.1)
+				send_add_shard(addr, curr_shardid)
+			end
+		end
+	end
+end
+
+function irina_del_collector(addr, notify_deleted_shard)
+	notify_deleted_shard = tonumber(notify_deleted_shard)
+
+	local addrs = {}
+	for tuple in box.space[1].index[0]:iterator(box.index.ALL) do
+		local curr_addr = tuple[1]
+		addrs[curr_addr] = 1
+	end
+
+	if addrs[addr] == nil then
+		print("collector with addr " .. addr .. " does not exist")
+		return
+	end
+
+	local n_collectors = get_table_size(addrs)
+
+	if n_collectors == 1 then
+		for i = 0, 1023 do
+			print("unbind shard #" .. i .. " from " .. addr)
+			box.delete(1, i)
+			if notify_deleted_shard ~= 0 then send_del_shard(addr, i) end
+		end
+		return
+	end
+
+	addrs[addr] = nil
+	local addr_shards = irina_get_shards(addr)
+	local n_addr_shards = get_table_size(addr_shards)
+
+	while n_addr_shards > 0 do
+		for curr_addr, _ in pairs(addrs) do
+			if n_addr_shards > 0 then
+				local shardid = nil
+				for k, v in pairs(addr_shards) do
+					shardid = v
+					table.remove(addr_shards, k)
+					n_addr_shards = n_addr_shards - 1
+					do break end
+				end
+
+				print("rebind shard #" .. shardid .. " from " .. addr .. " to " .. curr_addr)
+				box.replace(1, shardid, curr_addr)
+				if notify_deleted_shard ~= 0 then
+					send_del_shard(addr, shardid)
+					box.fiber.sleep(0.1)
+				end
+				send_add_shard(curr_addr, shardid)
+			end
+		end
+	end
+end
+
+function irina_get_shards(addr)
+	local result = {}
+	for tuple in box.space[1].index[0]:iterator(box.index.ALL) do
+		local curr_shardid = box.unpack('i', tuple[0])
+		if tuple[1] == addr then table.insert(result, curr_shardid) end
+	end
+	return result
 end
 
 local function update_record(email, set_instant, set_expirable)
@@ -78,7 +207,7 @@ function irina_add_user(email, userid, is_instant, shardid)
 		end
 	end
 
-	if need_send then send_instant_changes(email, userid, shardid, 1, 0) end
+	if need_send then send_change_status(email, userid, shardid, 1, 0) end
 end
 
 function irina_del_user(email)
@@ -88,7 +217,7 @@ function irina_del_user(email)
 	local userid = box.unpack('i', tuple[1])
 	local is_old_instant = box.unpack('i', tuple[2])
 	local shardid = box.unpack('i', tuple[5])
-	if is_old_instant == 1 then send_instant_changes(email, userid, shardid, 0, 0) end
+	if is_old_instant == 1 then send_change_status(email, userid, shardid, 0, 0) end
 end
 
 local function set_flags_impl(tuple, cond, set_instant, set_expirable)
@@ -102,7 +231,7 @@ local function set_flags_impl(tuple, cond, set_instant, set_expirable)
 	update_record(email, set_instant, set_expirable)
 
 	if is_instant ~= set_instant or is_expirable ~= set_expirable then
-		send_instant_changes(email, userid, shardid, set_instant, set_expirable)
+		send_change_status(email, userid, shardid, set_instant, set_expirable)
 	end
 end
 
@@ -136,7 +265,7 @@ function irina_get_instant_users_ex(shardid)
 	for tuple in box.space[0].index[1]:iterator(box.index.EQ, 1, shardid) do
 		table.insert(result, { tuple[0], box.unpack('i', tuple[1]), box.unpack('i', tuple[3]) })
 	end
-	return result
+	return unpack(result)
 end
 
 function irina_get_usual_users(shardid)
@@ -145,7 +274,7 @@ function irina_get_usual_users(shardid)
 	for tuple in box.space[0].index[1]:iterator(box.index.EQ, 0, shardid) do
 		table.insert(result, { tuple[0], box.unpack('i', tuple[1]) })
 	end
-	return result
+	return unpack(result)
 end
 
 local function is_expired(args, tuple)
