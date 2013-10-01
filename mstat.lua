@@ -5,6 +5,7 @@ local sender_ip_space = 3
 local dkim_msgtype_ts_space = 4
 local dkim_senderip_space = 5
 
+local field_last = 4
 local field_count = 10
 local timeout = 0.006
 local max_attempts = 5
