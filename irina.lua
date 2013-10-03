@@ -36,15 +36,14 @@ local function send_collector_cmd(addr, cmd)
 		return false
 	end
 
-	local bytes_sent, status, errno, errstr = s:send(data, 0.1)
-	if bytes_sent ~= #data then
+	local bytes_sent, status, errno, errstr = s:send(cmd, 0.1)
+	if bytes_sent ~= #cmd then
 		local _, errstr = s:error()
 		print("can not send data to collector[" .. host .. ":" .. port .. "]: " .. errstr)
 		s:close()
 		return false
 	end
 
-	s:shutdown(box.socket.SHUT_RDWR)
 	s:close()
 	return true
 end
