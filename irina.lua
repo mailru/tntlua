@@ -248,9 +248,11 @@ function irina_set_instant(email)
 end
 
 function irina_del_instant(email)
-	set_flags(email,
+-- do not remove instant status
+
+--[[	set_flags(email,
 		function(i, e) return i == 1 and e == 0 end,
-		0, 0)
+		0, 0)]]
 end
 
 function irina_set_online(email)
