@@ -21,7 +21,7 @@
 --   Index 1: TREE { key, task_id }
 --
 -- Space 2: Task Priority
---   Tuple: { key (STR), priority (NUM), is_locked (NUM), lock_time (NUM) }
+--   Tuple: { key (STR), priority (NUM), is_locked (NUM), lock_time (NUM), lock_source (STR) }
 --   Index 0: TREE { key }
 --   Index 1: TREE { priority, is_locked, lock_time }
 --
@@ -54,13 +54,15 @@ function rima_put_with_prio(key, data, prio)
 	rima_put_impl(key, data, prio)
 end
 
-local function get_prio_key(prio)
+local function get_prio_key(prio, source)
 	local v = box.select_limit(2, 1, 0, 1, prio, 0)
 	if v == nil then return nil end
 
+	if source == nil then source = "" end
+
 	-- lock the key
 	local key = v[0]
-	box.update(2, key, "=p=p", 2, 1, 3, box.time())
+	box.update(2, key, "=p=p=p", 2, 1, 3, box.time(), 4, source)
 
 	return key
 end
@@ -82,10 +84,10 @@ end
 --
 -- Request tasks from the queue.
 --
-function rima_get_ex(prio)
+function rima_get_ex(prio, source)
 	prio = box.unpack('i', prio)
 
-	local key = get_prio_key(prio)
+	local key = get_prio_key(prio, source)
 	if key == nil then return end
 	return unpack(get_key_data(key))
 end
@@ -112,15 +114,17 @@ end
 --
 -- Explicitly lock tasks for the key.
 --
-function rima_lock(key)
+function rima_lock(key, source)
 	local pr = box.select_limit(2, 0, 0, 1, key)
 	if pr ~= nil and box.unpack('i', pr[2]) > 0 then return 0 end
 
+	if source == nil then source = "" end
+
 	-- lock the key
 	if pr ~= nil then
-		box.update(2, key, "=p=p", 2, 1, 3, box.time())
+		box.update(2, key, "=p=p=p", 2, 1, 3, box.time(), 4, source)
 	else
-		box.insert(2, key, 0, 1, box.time())
+		box.insert(2, key, 0, 1, box.time(), source)
 	end
 
 	return 1
