@@ -108,18 +108,14 @@ local function guardian_loop(task)
     box.fiber.detach()
     box.fiber.name("guardian of "..task.name)
 
-    print("expiration: task '" .. task.name .. "' started")
-    -- create a worker fiber
-    task.worker_fiber = box.fiber.create(worker_loop)
-    box.fiber.resume(task.worker_fiber, task)
-
     while true do
-        if task.worker_fiber:id() == 0 then
-            print("expiration: task '" .. task.name .. "' restarted")
-            task.restarts = task.restarts + 1
+        if get_fid(task.worker_fiber) == 0 then
             -- create worker fiber
             task.worker_fiber = box.fiber.create(worker_loop)
-            result = box.fiber.resume(task.worker_fiber, task)
+            box.fiber.resume(task.worker_fiber, task)
+
+            print("expiration: task '" .. task.name .. "' restarted")
+            task.restarts = task.restarts + 1
         end
         box.fiber.sleep(expirationd.constants.check_interval)
     end
@@ -130,14 +126,11 @@ end
 -- Task managemet
 -- ------------------------------------------------------------------------- --
 
--- task list
-local task_list = {}
-
 -- create new expiration task
 local function create_task(name)
     local task = {}
     task.name = name
-    task.start_time = os.time()
+    task.start_time = box.time()
     task.guardian_fiber = nil
     task.worker_fiber = nil
     task.space_no = nil
@@ -158,11 +151,11 @@ local function get_task(name)
     end
 
     -- check, does the task exist
-    if task_list[name] == nil then
+    if expirationd.task_list[name] == nil then
         error("task '" .. name .. "' doesn't exist")
     end
 
-    return task_list[name]
+    return expirationd.task_list[name]
 end
 
 -- run task
@@ -174,12 +167,12 @@ end
 
 -- kill task
 local function kill_task(task)
-    if task.guardian_fiber ~= nil and task.guardian_fiber:id() ~= 0 then
+    if get_fid(task.guardian_fiber) ~= 0 then
         -- kill guardian fiber
         box.fiber.cancel(task.guardian_fiber)
         task.guardian_fiber = nil
     end
-    if task.worker_fiber ~= nil and task.worker_fiber:id() ~= 0 then
+    if get_fid(task.worker_fiber) ~= 0 then
         -- kill worker fiber
         box.fiber.cancel(task.worker_fiber)
         task.worker_fiber = nil
@@ -192,11 +185,17 @@ end
 -- ========================================================================= --
 
 -- main table
-expirationd = {
-    -- enable/disable debug functions
-    _debug = false,
-    -- constants
-    constants = finalize_table(
+if expirationd == nil then
+    expirationd = {
+        -- enable/disable debug functions
+        _debug = false,
+        -- task list
+        task_list = {}
+    }
+end
+
+-- constants
+expirationd.constants = finalize_table(
         {
             -- default value of number of tuples will be checked by one iteration
             default_tuples_per_iter = 1024,
@@ -207,8 +206,6 @@ expirationd = {
             -- check worker intarval
             check_interval = 1,
         })
-}
-
 
 -- ========================================================================= --
 -- Expriration daemon management functions
@@ -241,7 +238,7 @@ function expirationd.run_task(name,
     end
 
     -- check, does the task exist
-    if task_list[name] ~= nil then
+    if expirationd.task_list[name] ~= nil then
         print("restart task '" .. name .. "'")
 
         expirationd.kill_task(name)
@@ -299,7 +296,7 @@ function expirationd.run_task(name,
     --
 
     -- put the task to table
-    task_list[name] = task
+    expirationd.task_list[name] = task
     -- run
     run_task(task)
 end
@@ -311,7 +308,7 @@ end
 --
 function expirationd.kill_task(name)
     kill_task(get_task(name))
-    task_list[name] = nil
+    expirationd.task_list[name] = nil
 end
 
 --
@@ -327,7 +324,7 @@ function expirationd.show_task_list(print_head)
               "time")
         print("-----------------------------------")
     end
-    for i, task in pairs(task_list) do
+    for i, task in pairs(expirationd.task_list) do
         print(task.name .. "\t" ..
               task.space_no .. "\t" ..
               task.tuples_expired .. "\t" ..
