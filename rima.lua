@@ -17,14 +17,28 @@
 --
 -- Space 0: Remote IMAP Collector Task Queue
 --   Tuple: { task_id (NUM64), key (STR), task_description (NUM), add_time (NUM) }
---   Index 0: TREE { task_id }
+--   Index 0: HASH { task_id }
 --   Index 1: TREE { key, task_id }
+--
+-- Space 1: MaxId storage
+--   Tuple: { name (STR), value (NUM64) }
+--   Index 0: HASH { name }
 --
 -- Space 2: Task Priority
 --   Tuple: { key (STR), priority (NUM), is_locked (NUM), lock_time (NUM), lock_source (STR) }
 --   Index 0: TREE { key }
 --   Index 1: TREE { priority, is_locked, lock_time }
 --
+
+if box.select_limit(1, 0, 0, 1, "max_id") == nil then
+	box.insert(1, "max_id", tonumber64(0))
+end
+
+local function auto_increment(...)
+	local next_id = box.update(1, "max_id", "+p", 1, 1)
+	local id = box.unpack('l', next_id[1])
+	box.insert(0, id, ...)
+end
 
 --
 -- Put task to the queue.
@@ -34,7 +48,8 @@ local function rima_put_impl(key, data, prio)
 	key = key:gsub("@external$", "")
 
 	-- insert task data into the queue
-	box.auto_increment(0, key, data, box.time())
+	auto_increment(0, key, data, box.time())
+
 	-- increase priority of the key
 	local pr = box.select_limit(2, 0, 0, 1, key)
 	if pr == nil then
