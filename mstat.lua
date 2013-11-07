@@ -198,7 +198,7 @@ function mstat_add(
     end
     if dkim_domain ~= "" and msgtype ~= "" then
         local element = dkim_domain..":"..msgtype..time_str
-        increment_stat(dkim_space, element, user, spam_users, prob_spam_users, inv_users)
+        increment_stat(dkim_space, element, users, spam_users, prob_spam_users, inv_users)
         if subject == "" then subject = " " end
         increment_stat3(dkim_msgtype_ts_space, element, subject, timestamp)
     end
