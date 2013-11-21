@@ -207,11 +207,16 @@ function irina_add_user(email, userid, is_instant, shardid)
 		local is_old_instant, is_old_expirable = box.unpack('i', tuple[2]), box.unpack('i', tuple[3])
 		if (is_old_instant == 0 or is_old_expirable == 1) then
 			need_send = true
+			shardid = box.unpack('i', tuple[5])
 			update_record(email, is_instant, 0)
 		end
+	elseif box.unpack('i', tuple[2]) == 1 then
+		need_send = true
+		shardid = box.unpack('i', tuple[5])
+		update_record(email, 0, 0)
 	end
 
-	if need_send then send_change_status(email, userid, shardid, 1, 0) end
+	if need_send then send_change_status(email, userid, shardid, is_instant, 0) end
 end
 
 function irina_del_user(email)
