@@ -26,6 +26,8 @@
 --   Index 1: TREE { priority, is_locked, lock_time }
 --
 
+local EXPIRATION_TIME = 30 * 60 -- seconds
+
 --
 -- Put task to the queue.
 --
@@ -95,15 +97,20 @@ end
 --
 -- Notify manager that tasks for that key was completed.
 -- Rima unlocks key and next rima_get() may returns tasks with such key.
+-- In case of non-zero @unlock_delay user unlock is defered for @unlock_delay seconds (at least).
 --
-function rima_done(key)
+function rima_done(key, unlock_delay)
+	if unlock_delay ~= nil then unlock_delay = box.unpack('i', unlock_delay) end
+
 	-- TODO Remove workaround
 	key = key:gsub("@external$", "")
 
 	local pr = box.select_limit(2, 0, 0, 1, key)
 	if pr == nil then return end
 
-	if box.select_limit(0, 1, 0, 1, key) == nil then
+	if unlock_delay ~= nil and unlock_delay > 0 then
+		box.update(2, key, "=p=p", 2, 1, 3, box.time() - EXPIRATION_TIME + unlock_delay)
+	elseif box.select_limit(0, 1, 0, 1, key) == nil then
 		-- no tasks for this key in the queue
 		box.delete(2, key)
 	else
@@ -154,4 +161,4 @@ end
 
 dofile('expirationd.lua')
 
-expirationd.run_task('expire_locks', 2, is_expired, delete_expired, {fieldno = 3, expiration_time = 30*60})
+expirationd.run_task('expire_locks', 2, is_expired, delete_expired, {fieldno = 3, expiration_time = EXPIRATION_TIME})
