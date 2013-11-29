@@ -79,6 +79,34 @@ local function get_table_size(t)
 	return n
 end
 
+function irina_add_collector_for(addr, shardid, notify_added_shard, notify_deleted_shard)
+	shardid = tonumber(shardid)
+	notify_added_shard = tonumber(notify_added_shard)
+	notify_deleted_shard = tonumber(notify_deleted_shard)
+
+	if shardid < 0 or shardid > 1023 then error("shard id must be in [0,1023] range") end
+	if notify_added_shard == nil then notify_added_shard = 1 end
+	if notify_deleted_shard == nil then notify_deleted_shard = 1 end
+
+	local tuple = box.select_limit(1, 0, 0, 1, shardid)
+
+	if tuple == nil then
+		box.insert(1, shardid, addr)
+		if notify_added_shard ~= 0 then send_add_shard(addr, shardid) end
+	else
+		local prev_addr = tuple[1]
+		print("rebind shard #" .. shardid .. " from " .. prev_addr .. " to " .. addr)
+		box.replace(1, shardid, addr)
+		if notify_deleted_shard ~= 0 then
+			send_del_shard(prev_addr, shardid)
+		end
+		if notify_added_shard ~= 0 then
+			box.fiber.sleep(0.1)
+			send_add_shard(addr, shardid)
+		end
+	end
+end
+
 function irina_add_collector(addr, notify_added_shard)
 	notify_added_shard = tonumber(notify_added_shard)
 
