@@ -345,14 +345,13 @@ function expirationd.task_details(name)
     print("space: ", task.space_no)
     print("is_tuple_expired handler: ", task.is_tuple_expired)
     print("process_expired_tuple handler: ", task.process_expired_tuple)
-    io.write("args:")
     if task.args ~= nil then
-        io.write("\n")
+        print("args:")
         for i, v in pairs(task.args) do
             print("  ", i, ": ", v)
         end
     else
-        io.write(" nil\n")
+        print("args: nil")
     end
     print("tuples per iteration: ", task.tuples_per_iter)
     print("full index scan time: ", task.full_scan_time)
