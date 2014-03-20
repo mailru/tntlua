@@ -40,3 +40,27 @@ function list_mailer_get_ext(listid)
 
 	return unpack(result)
 end
+
+function list_mailer_get_ext2(listid)
+	listid = box.unpack('i', listid)
+
+	local properties = box.select(1, 0, listid)
+
+	local subj_prefix = ""
+	local flags = 0
+	if properties ~= nil then
+		subj_prefix = properties[1]
+		if #properties > 2 then flags = box.unpack('i', properties[2]) end
+	end
+
+	local result = { subj_prefix, flags }
+
+	local tuples = { box.select(0, 0, listid) }
+	if tuples == nil then return end
+
+	for _, tuple in pairs(tuples) do
+		table.insert(result, tuple[1])
+	end
+
+	return unpack(result)
+end
