@@ -25,6 +25,10 @@
 --   Index 0: TREE { key }
 --   Index 1: TREE { priority, is_locked, lock_time }
 --
+-- Space 3: Mail Fetcher Queue (Special queue for fast single message loading)
+--   Tuple: { task_id (NUM64), key (STR), task_description (NUM), add_time (NUM) }
+--   Index 0: TREE { task_id }
+--
 
 local EXPIRATION_TIME = 30 * 60 -- seconds
 
@@ -54,6 +58,13 @@ function rima_put_with_prio(key, data, prio)
 	prio = box.unpack('i', prio)
 
 	rima_put_impl(key, data, prio)
+end
+
+--
+-- Put fetch single mail task to the queue.
+--
+function rima_put_fetchmail(key, data)
+	box.auto_increment(3, key, data, box.time())
 end
 
 local function get_prio_key(prio, source)
@@ -92,6 +103,19 @@ function rima_get_ex(prio, source)
 	local key = get_prio_key(prio, source)
 	if key == nil then return end
 	return unpack(get_key_data(key))
+end
+
+--
+-- Request fetch single mail tasks from the queue.
+--
+function rima_get_fetchmail()
+	local tuple = box.select_range(3, 0, 1)
+	if tuple == nil then return end
+	box.delete(3, box.unpack('l', tuple[0]))
+
+	local result = { tuple[1] }
+	table.insert(result, { box.unpack('i', tuple[3]), tuple[2] } )
+	return unpack(result)
 end
 
 --
