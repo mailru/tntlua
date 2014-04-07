@@ -36,9 +36,6 @@ local EXPIRATION_TIME = 30 * 60 -- seconds
 -- Put task to the queue.
 --
 local function rima_put_impl(key, data, prio)
-	-- TODO Remove workaround
-	key = key:gsub("@external$", "")
-
 	-- insert task data into the queue
 	box.auto_increment(0, key, data, box.time())
 	-- increase priority of the key
@@ -119,15 +116,26 @@ function rima_get_fetchmail()
 end
 
 --
+-- Request tasks from the queue for concrete user.
+--
+function rima_get_user_tasks(key, source)
+	local lock_acquired = rima_lock(key, source)
+	if lock_acquired == 0 then
+		local pr = box.select_limit(2, 0, 0, 1, key)
+		if pr[4] ~= source then return end
+		lock_acquired = 1
+	end
+
+	return unpack(get_key_data(key))
+end
+
+--
 -- Notify manager that tasks for that key was completed.
 -- Rima unlocks key and next rima_get() may returns tasks with such key.
 -- In case of non-zero @unlock_delay user unlock is defered for @unlock_delay seconds (at least).
 --
 function rima_done(key, unlock_delay)
 	if unlock_delay ~= nil then unlock_delay = box.unpack('i', unlock_delay) end
-
-	-- TODO Remove workaround
-	key = key:gsub("@external$", "")
 
 	local pr = box.select_limit(2, 0, 0, 1, key)
 	if pr == nil then return end
