@@ -16,6 +16,23 @@ function msglinks_set(userid, fromid, linkid, toid, created)
 	box.insert(0, userid, fromid, linkid, toid, created)
 end
 
+function msglinks_delete(userid, numbers, ...)
+	userid = box.unpack('i', userid)
+	numbers = box.unpack('i', numbers) -- num of draft ids
+
+	if numbers == 0 then
+		-- delete all
+		for tuple in box.space[0].index[0]:iterator(box.index.EQ, userid) do
+			box.delete(0, userid, tuple[3])
+		end
+	else
+		local draft_ids = {...}
+		for _, draft_id in ipairs(draft_ids) do
+			box.delete(0, userid, draft_id)
+		end
+	end
+end
+
 --
 -- Run expiration of tuples
 --
