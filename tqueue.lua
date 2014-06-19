@@ -481,8 +481,7 @@ function box.queue.cmd_stat()
 		if delayed_ttl_exp_deleted == nil then delayed_ttl_exp_deleted = 0 end
 		if ttl_exp_deleted == nil then ttl_exp_deleted = 0 end
 		if ttr_exp_deleted == nil then ttr_exp_deleted = 0 end
-		print('tube:', tonumber(tube), ' added', added, ' deleted',deleted, ' ack',ack, ' release',release, ' release_deleted',release_deleted, ' delayed_ttl_exp_deleted',delayed_ttl_exp_deleted, ' ttl_exp_deleted',ttl_exp_deleted, ' ttr_exp_deleted',ttr_exp_deleted);
-		-- table.insert(stats, box.tuple.new({tonumber(tube), added, deleted }) )
+		-- print('tube:', tonumber(tube), ' added', added, ' deleted',deleted, ' ack',ack, ' release',release, ' release_deleted',release_deleted, ' delayed_ttl_exp_deleted',delayed_ttl_exp_deleted, ' ttl_exp_deleted',ttl_exp_deleted, ' ttr_exp_deleted',ttr_exp_deleted);
 		table.insert(stats, box.tuple.new({tonumber(tube), added, deleted, ack, release, release_deleted, delayed_ttl_exp_deleted, ttl_exp_deleted, ttr_exp_deleted }) )
 	end
 	box.queue.stat = {} -- reset stats
