@@ -28,6 +28,7 @@
 -- Space 3: Mail Fetcher Queue (Special queue for fast single message loading)
 --   Tuple: { task_id (NUM64), key (STR), task_description (NUM), add_time (NUM) }
 --   Index 0: TREE { task_id }
+--   Index 1: TREE { key }
 --
 
 local EXPIRATION_TIME = 30 * 60 -- seconds
@@ -108,11 +109,23 @@ end
 function rima_get_fetchmail()
 	local tuple = box.select_range(3, 0, 1)
 	if tuple == nil then return end
-	box.delete(3, box.unpack('l', tuple[0]))
 
-	local result = { tuple[1] }
-	table.insert(result, { box.unpack('i', tuple[3]), tuple[2] } )
-	return unpack(result)
+	local key = tuple[1]
+
+	local result = {}
+	local n = 0
+
+	local tuples = { box.select_limit(3, 1, 0, 1000, key) }
+	for _, tuple in pairs(tuples) do
+		tuple = box.delete(3, box.unpack('l', tuple[0]))
+		if tuple ~= nil then
+			table.insert(result, { box.unpack('i', tuple[3]), tuple[2] })
+			n = 1
+		end
+	end
+
+	if n == 0 then return end
+	return key, unpack(result)
 end
 
 --
