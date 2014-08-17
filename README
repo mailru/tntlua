@@ -1,6 +1,10 @@
 Collection of Tarantool/Box stored procedures.
 Release 0.1
 
+Warning
+-------
+This collection is for Tarantool 1.5
+
 You can load any of these procedure sets by doing
 lua dofile("name.lua")
 in the administrative console.
