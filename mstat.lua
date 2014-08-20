@@ -137,7 +137,7 @@ local function increment_stat(space, key, users, spam_users, prob_spam_users, in
     end
 end
 
-local function increment_stat2(space, key, element1, element2, users, spam_users, prob_spam, inv_users)
+local function increment_stat2(space, key, element1, element2, users, spam_users, prob_spam_users, inv_users)
     retry = true
     count = 0
     while retry do
@@ -191,7 +191,7 @@ function mstat_add(
         increment_stat(dkim_space, dkim_domain..time_str, users, spam_users, prob_spam_users, inv_users)
     end
     if sender_ip ~= "" then
-        increment_stat(sender_ip_space, sender_ip..time_str, users, spam_users, prob_spam, inv_users)
+        increment_stat(sender_ip_space, sender_ip..time_str, users, spam_users, prob_spam_users, inv_users)
     end
     if dkim_domain ~= "" and sender_ip ~= "" then
         increment_stat2(dkim_senderip_space, dkim_domain.."|"..sender_ip..time_str, dkim_domain, sender_ip, users, spam_users, prob_spam_users, inv_users)
