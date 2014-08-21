@@ -199,32 +199,23 @@ local function fetch_blacklist()
 end
 
 local blacklist = {}
-local last_blacklist_update = nil
-local function get_dkim_blacklist()
-    local now = box.time()
-    local update_interval = blacklist_tarantool_config.update_interval
-    local is_fetch_required
-
-    if last_blacklist_update ~= nil then
-        is_fetch_required = (now - last_blacklist_update) > update_interval
-    else
-        print("Cold start. Initial blacklist fetch is required.")
-        is_fetch_required = true
-    end
-
-    if is_fetch_required then
-        print('Update blacklist')
-        local new_blacklist = fetch_blacklist()
-        if new_blacklist ~= nil then
+box.fiber.wrap(function ()
+    local new_blacklist
+    while true do
+        print("Update blacklist")
+        status, new_blacklist = pcall(fetch_blacklist)
+        if status and new_blacklist ~= nil then
             blacklist = new_blacklist
-            last_blacklist_update = now
+            print("Blacklist updated")
+        else
+            print("Update failed")
         end
+        box.fiber.sleep(blacklist_tarantool_config.update_interval)
     end
-    return blacklist
 end
+)
 
 local function dkim_is_blacklisted(dkim_domain)
-    local blacklist = get_dkim_blacklist()
     local is_blacklisted = false
 
     for i = 1, #blacklist do
