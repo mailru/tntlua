@@ -11,16 +11,16 @@ local timeout = 0.006
 local max_attempts = 5
 
 local function increment_stat3(space, key, subject, timestamp)
-    retry = true
-    count = 0
+    local retry = true
+    local count = 0
     while retry do
-        status, result = pcall(box.update, space, key, '=p', field_last, timestamp)
+        local status, result = pcall(box.update, space, key, '=p', field_last, timestamp)
         if status then
         --success update or tuple is not exist
             retry = false
             if result == nil then
             --insert new tuple
-                tuple = {}
+                local tuple = {}
                 for i = 2, field_last do tuple[i] = 0 end
                 tuple[1] = string.sub(key, -8)
                 tuple[2] = subject
@@ -43,16 +43,16 @@ end
 -- BEG deprecated interface
 
 function increment_or_insert(space, key, field)
-    retry = true
-    count = 0
+    local retry = true
+    local count = 0
     while retry do
-	status, result = pcall(box.update, space, key, '+p', field, 1)
+	local status, result = pcall(box.update, space, key, '+p', field, 1)
 	if status then
 	--success update or tuple is not exist
 	    retry = false
 	    if result == nil then
 	    --insert new tuple
-		tuple = {}
+		local tuple = {}
 		for i = 2, field_count do tuple[i] = 0 end
 		tuple[1] = string.sub(key, -8)
 		tuple[tonumber(field)] = 1
@@ -71,16 +71,16 @@ function increment_or_insert(space, key, field)
 end
 
 function increment_or_insert_2(space, key, field, element1, element2)
-    retry = true
-    count = 0
+    local retry = true
+    local count = 0
     while retry do
-    status, result = pcall(box.update, space, key, '+p', field, 1)
+    local status, result = pcall(box.update, space, key, '+p', field, 1)
     if status then
     --success update or tuple is not exist
         retry = false
         if result == nil then
         --insert new tuple
-        tuple = {}
+        local tuple = {}
         for i = 2, field_count + 2 do tuple[i] = 0 end
         tuple[1] = string.sub(key, -8)
         tuple[tonumber(field)] = 1
@@ -107,16 +107,16 @@ end
 -- END deprecated interface
 
 local function increment_stat(space, key, users, spam_users, prob_spam_users, inv_users)
-    retry = true
-    count = 0
+    local retry = true
+    local count = 0
     while retry do
-        status, result = pcall(box.update, space, key, '+p+p+p+p', 2, users, 3, spam_users, 4, prob_spam_users, 5, inv_users)
+        local status, result = pcall(box.update, space, key, '+p+p+p+p', 2, users, 3, spam_users, 4, prob_spam_users, 5, inv_users)
         if status then
         --success update or tuple is not exist
             retry = false
             if result == nil then
             --insert new tuple
-                tuple = {}
+                local tuple = {}
                 for i = 2, field_count do tuple[i] = 0 end
                 tuple[1] = string.sub(key, -8)
                 tuple[2] = users
@@ -138,16 +138,16 @@ local function increment_stat(space, key, users, spam_users, prob_spam_users, in
 end
 
 local function increment_stat2(space, key, element1, element2, users, spam_users, prob_spam_users, inv_users)
-    retry = true
-    count = 0
+    local retry = true
+    local count = 0
     while retry do
-        status, result = pcall(box.update, space, key, '+p+p+p+p', 2, users, 3, spam_users, 4, prob_spam_users, 5, inv_users)
+        local status, result = pcall(box.update, space, key, '+p+p+p+p', 2, users, 3, spam_users, 4, prob_spam_users, 5, inv_users)
         if status then
         --success update or tuple is not exist
             retry = false
             if result == nil then
             --insert new tuple
-                tuple = {}
+                local tuple = {}
                 for i = 2, field_count + 2 do tuple[i] = 0 end
                 tuple[1] = string.sub(key, -8)
                 tuple[2] = users
