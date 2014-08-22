@@ -10,17 +10,24 @@ local field_count = 10
 local timeout = 0.006
 local max_attempts = 5
 
+local blacklist_tarantool_config = {
+    host='127.0.0.1',
+    port=33013,
+    reconnect_interval=0,
+    update_interval=60,
+    space=1}
+
 local function increment_stat3(space, key, subject, timestamp)
-    retry = true
-    count = 0
+    local retry = true
+    local count = 0
     while retry do
-        status, result = pcall(box.update, space, key, '=p', field_last, timestamp)
+        local status, result = pcall(box.update, space, key, '=p', field_last, timestamp)
         if status then
         --success update or tuple is not exist
             retry = false
             if result == nil then
             --insert new tuple
-                tuple = {}
+                local tuple = {}
                 for i = 2, field_last do tuple[i] = 0 end
                 tuple[1] = string.sub(key, -8)
                 tuple[2] = subject
@@ -43,16 +50,16 @@ end
 -- BEG deprecated interface
 
 function increment_or_insert(space, key, field)
-    retry = true
-    count = 0
+    local retry = true
+    local count = 0
     while retry do
-	status, result = pcall(box.update, space, key, '+p', field, 1)
+	local status, result = pcall(box.update, space, key, '+p', field, 1)
 	if status then
 	--success update or tuple is not exist
 	    retry = false
 	    if result == nil then
 	    --insert new tuple
-		tuple = {}
+		local tuple = {}
 		for i = 2, field_count do tuple[i] = 0 end
 		tuple[1] = string.sub(key, -8)
 		tuple[tonumber(field)] = 1
@@ -71,16 +78,16 @@ function increment_or_insert(space, key, field)
 end
 
 function increment_or_insert_2(space, key, field, element1, element2)
-    retry = true
-    count = 0
+    local retry = true
+    local count = 0
     while retry do
-    status, result = pcall(box.update, space, key, '+p', field, 1)
+    local status, result = pcall(box.update, space, key, '+p', field, 1)
     if status then
     --success update or tuple is not exist
         retry = false
         if result == nil then
         --insert new tuple
-        tuple = {}
+        local tuple = {}
         for i = 2, field_count + 2 do tuple[i] = 0 end
         tuple[1] = string.sub(key, -8)
         tuple[tonumber(field)] = 1
@@ -107,16 +114,16 @@ end
 -- END deprecated interface
 
 local function increment_stat(space, key, users, spam_users, prob_spam_users, inv_users)
-    retry = true
-    count = 0
+    local retry = true
+    local count = 0
     while retry do
-        status, result = pcall(box.update, space, key, '+p+p+p+p', 2, users, 3, spam_users, 4, prob_spam_users, 5, inv_users)
+        local status, result = pcall(box.update, space, key, '+p+p+p+p', 2, users, 3, spam_users, 4, prob_spam_users, 5, inv_users)
         if status then
         --success update or tuple is not exist
             retry = false
             if result == nil then
             --insert new tuple
-                tuple = {}
+                local tuple = {}
                 for i = 2, field_count do tuple[i] = 0 end
                 tuple[1] = string.sub(key, -8)
                 tuple[2] = users
@@ -138,16 +145,16 @@ local function increment_stat(space, key, users, spam_users, prob_spam_users, in
 end
 
 local function increment_stat2(space, key, element1, element2, users, spam_users, prob_spam_users, inv_users)
-    retry = true
-    count = 0
+    local retry = true
+    local count = 0
     while retry do
-        status, result = pcall(box.update, space, key, '+p+p+p+p', 2, users, 3, spam_users, 4, prob_spam_users, 5, inv_users)
+        local status, result = pcall(box.update, space, key, '+p+p+p+p', 2, users, 3, spam_users, 4, prob_spam_users, 5, inv_users)
         if status then
         --success update or tuple is not exist
             retry = false
             if result == nil then
             --insert new tuple
-                tuple = {}
+                local tuple = {}
                 for i = 2, field_count + 2 do tuple[i] = 0 end
                 tuple[1] = string.sub(key, -8)
                 tuple[2] = users
@@ -170,6 +177,40 @@ local function increment_stat2(space, key, element1, element2, users, spam_users
     end
 end
 
+local function fetch_blacklist(conn, space)
+    assert(conn:timeout(1):ping(), "Tarantool is unreachable")
+
+    local response = {conn:select_range(space, 0, 9000)}
+    print("Fetched "..#response.." rows from space "..space)
+
+    local blacklist = {}
+    for i = 1, #response do
+        local domain = response[i][0]
+        blacklist[domain] = true
+    end
+    return blacklist
+end
+
+local blacklist = {}
+box.fiber.wrap(function ()
+    local tnt = blacklist_tarantool_config
+    print("New Connect to tarantool "..tnt.host..":"..tnt.port)
+    local conn = box.net.box.new(tnt.host, tnt.port, tnt.reconnect_interval)
+
+    while true do
+        print("Update blacklist")
+        local ok, result = pcall(fetch_blacklist, conn, tnt.space)
+        if ok then
+            blacklist = result
+            print("Blacklist updated")
+        else
+            -- exception
+            print("Update failed. Reason: "..result)
+        end
+        box.fiber.sleep(tnt.update_interval)
+    end
+end)
+
 function mstat_add(
         msgtype, sender_ip, from_domain, envfrom_domain, dkim_domain, subject,
         users, spam_users, prob_spam_users, inv_users,
@@ -180,6 +221,10 @@ function mstat_add(
     inv_users       = box.unpack('i', inv_users)
     timestamp       = box.unpack('i', timestamp)
     local time_str = os.date("_%d_%m_%y", timestamp)
+
+    if blacklist[dkim_domain] == true then
+        print("DKIM:"..dkim_domain.." is blacklisted")
+    end
 
     if envfrom_domain ~= "" then
         increment_stat(envfrom_space, envfrom_domain..time_str, users, spam_users, prob_spam_users, inv_users)
