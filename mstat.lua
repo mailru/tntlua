@@ -177,53 +177,40 @@ local function increment_stat2(space, key, element1, element2, users, spam_users
     end
 end
 
-local tnt = blacklist_tarantool_config
-print("Connect to tarantool "..tnt.host..":"..tnt.port)
-local conn = box.net.box.new(tnt.host, tnt.port, tnt.reconnect_interval)
-local function fetch_blacklist()
-    if conn:ping() then
-        local response = {conn:select_range(tnt.space, 0, 9000)}
-        print("Fetched "..#response.." rows from space "..tnt.space)
+local function fetch_blacklist(conn, space)
+    assert(conn:timeout(1):ping(), "Tarantool is unreachable")
 
-        local blacklist = {}
-        for i = 1, #response do
-            table.insert(blacklist, response[i][0])
-        end
+    local response = {conn:select_range(space, 0, 9000)}
+    print("Fetched "..#response.." rows from space "..space)
 
-        return blacklist
-    else
-        return nil
+    local blacklist = {}
+    for i = 1, #response do
+        local domain = response[i][0]
+        blacklist[domain] = true
     end
+    return blacklist
 end
 
 local blacklist = {}
 box.fiber.wrap(function ()
+    local tnt = blacklist_tarantool_config
+    print("New Connect to tarantool "..tnt.host..":"..tnt.port)
+    local conn = box.net.box.new(tnt.host, tnt.port, tnt.reconnect_interval)
+
     local new_blacklist
     while true do
         print("Update blacklist")
-        status, new_blacklist = pcall(fetch_blacklist)
-        if status and new_blacklist ~= nil then
-            blacklist = new_blacklist
+        local ok, result = pcall(fetch_blacklist, conn, tnt.space)
+        if ok then
+            blacklist = result
             print("Blacklist updated")
         else
-            print("Update failed")
+            -- exception
+            print("Update failed. Reason: "..result)
         end
-        box.fiber.sleep(blacklist_tarantool_config.update_interval)
+        box.fiber.sleep(tnt.update_interval)
     end
-end
-)
-
-local function dkim_is_blacklisted(dkim_domain)
-    local is_blacklisted = false
-
-    for i = 1, #blacklist do
-        if blacklist[i] == dkim_domain then
-            is_blacklisted = true
-            break
-        end
-    end
-    return is_blacklisted
-end
+end)
 
 function mstat_add(
         msgtype, sender_ip, from_domain, envfrom_domain, dkim_domain, subject,
@@ -236,7 +223,7 @@ function mstat_add(
     timestamp       = box.unpack('i', timestamp)
     local time_str = os.date("_%d_%m_%y", timestamp)
 
-    if dkim_is_blacklisted(dkim_domain) then
+    if blacklist[dkim_domain] == true then
         print("DKIM:"..dkim_domain.." is blacklisted")
     end
 
