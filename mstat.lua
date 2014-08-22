@@ -197,7 +197,6 @@ box.fiber.wrap(function ()
     print("New Connect to tarantool "..tnt.host..":"..tnt.port)
     local conn = box.net.box.new(tnt.host, tnt.port, tnt.reconnect_interval)
 
-    local new_blacklist
     while true do
         print("Update blacklist")
         local ok, result = pcall(fetch_blacklist, conn, tnt.space)
