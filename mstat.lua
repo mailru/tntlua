@@ -177,11 +177,10 @@ local function increment_stat2(space, key, element1, element2, users, spam_users
     end
 end
 
+local tnt = blacklist_tarantool_config
+print("Connect to tarantool "..tnt.host..":"..tnt.port)
+local conn = box.net.box.new(tnt.host, tnt.port, tnt.reconnect_interval)
 local function fetch_blacklist()
-    local tnt = blacklist_tarantool_config
-    local conn = box.net.box.new(tnt.host, tnt.port, tnt.reconnect_interval)
-    print("Connect to tarantool "..tnt.host..":"..tnt.port)
-
     if conn:ping() then
         local response = {conn:select_range(tnt.space, 0, 9000)}
         print("Fetched "..#response.." rows from space "..tnt.space)
@@ -190,7 +189,6 @@ local function fetch_blacklist()
         for i = 1, #response do
             table.insert(blacklist, response[i][0])
         end
-        conn:close()
 
         return blacklist
     else
