@@ -222,29 +222,52 @@ function mstat_add(
     timestamp       = box.unpack('i', timestamp)
     local time_str = os.date("_%d_%m_%y", timestamp)
 
-    if blacklist[dkim_domain] == true then
-        print("DKIM:"..dkim_domain.." is blacklisted")
+    -- Collect DKIM domains
+    -- Multiple DKIM format: dkim_domain == '"mail.ru","bk.ru"'
+    -- Single DKIM format: dkim_domain == 'mail.ru'
+    local dkim_domains = {}
+    if dkim_domain:sub(1, 1) == '"' and dkim_domain:sub(-1, -1) == '"' then
+        local sep = ","
+        local pattern = string.format("([^%s]+)", sep)
+        dkim_domain:gsub(pattern, function(c) dkim_domains[#dkim_domains+1] = c:sub(2, -2) end)
+    else
+        dkim_domains[1] = dkim_domain
     end
 
+    -- Check every DKIM for blacklist
+    for i = 1, #dkim_domains do
+        if blacklist[dkim_domains[i]] == true then
+            print("DKIM:"..dkim_domains[i].." is blacklisted")
+            return
+        end
+    end
+
+    -- Update statistics
     if envfrom_domain ~= "" then
         increment_stat(envfrom_space, envfrom_domain..time_str, users, spam_users, prob_spam_users, inv_users)
     end
     if from_domain ~= "" then
         increment_stat(from_space, from_domain..time_str, users, spam_users, prob_spam_users, inv_users)
     end
-    if dkim_domain ~= "" then
-        increment_stat(dkim_space, dkim_domain..time_str, users, spam_users, prob_spam_users, inv_users)
+    if #dkim_domains >= 1 then
+        for i = 1, #dkim_domains do
+            increment_stat(dkim_space, dkim_domains[i]..time_str, users, spam_users, prob_spam_users, inv_users)
+        end
     end
     if sender_ip ~= "" then
         increment_stat(sender_ip_space, sender_ip..time_str, users, spam_users, prob_spam_users, inv_users)
     end
-    if dkim_domain ~= "" and sender_ip ~= "" then
-        increment_stat2(dkim_senderip_space, dkim_domain.."|"..sender_ip..time_str, dkim_domain, sender_ip, users, spam_users, prob_spam_users, inv_users)
+    if #dkim_domains >= 1 and sender_ip ~= "" then
+        for i = 1, #dkim_domains do
+            increment_stat2(dkim_senderip_space, dkim_domains[i].."|"..sender_ip..time_str, dkim_domains[i], sender_ip, users, spam_users, prob_spam_users, inv_users)
+        end
     end
-    if dkim_domain ~= "" and msgtype ~= "" then
-        local element = dkim_domain..":"..msgtype..time_str
-        increment_stat(dkim_space, element, users, spam_users, prob_spam_users, inv_users)
-        if subject == "" then subject = " " end
-        increment_stat3(dkim_msgtype_ts_space, element, subject, timestamp)
+    if #dkim_domains >= 1 and msgtype ~= "" then
+        for i = 1, #dkim_domains do
+            local element = dkim_domains[i]..":"..msgtype..time_str
+            increment_stat(dkim_space, element, users, spam_users, prob_spam_users, inv_users)
+            if subject == "" then subject = " " end
+            increment_stat3(dkim_msgtype_ts_space, element, subject, timestamp)
+        end
     end
 end
