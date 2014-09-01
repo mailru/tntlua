@@ -249,21 +249,21 @@ function mstat_add(
     if from_domain ~= "" then
         increment_stat(from_space, from_domain..time_str, users, spam_users, prob_spam_users, inv_users)
     end
-    if #dkim_domains >= 1 then
-        for i = 1, #dkim_domains do
+    for i = 1, #dkim_domains do
+        if dkim_domains[i] ~= "" then
             increment_stat(dkim_space, dkim_domains[i]..time_str, users, spam_users, prob_spam_users, inv_users)
         end
     end
     if sender_ip ~= "" then
         increment_stat(sender_ip_space, sender_ip..time_str, users, spam_users, prob_spam_users, inv_users)
     end
-    if #dkim_domains >= 1 and sender_ip ~= "" then
-        for i = 1, #dkim_domains do
+    for i = 1, #dkim_domains do
+        if dkim_domains[i] ~= "" and sender_ip ~= "" then
             increment_stat2(dkim_senderip_space, dkim_domains[i].."|"..sender_ip..time_str, dkim_domains[i], sender_ip, users, spam_users, prob_spam_users, inv_users)
         end
     end
-    if #dkim_domains >= 1 and msgtype ~= "" then
-        for i = 1, #dkim_domains do
+    for i = 1, #dkim_domains do
+        if dkim_domains[i] ~= "" and msgtype ~= "" then
             local element = dkim_domains[i]..":"..msgtype..time_str
             increment_stat(dkim_space, element, users, spam_users, prob_spam_users, inv_users)
             if subject == "" then subject = " " end
