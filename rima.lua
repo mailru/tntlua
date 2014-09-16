@@ -183,6 +183,32 @@ function rima_lock(key, source)
 end
 
 --
+-- Delete info and all tasks for user
+--
+
+function rima_delete_user(email)
+	local something_deleted = 0
+	repeat
+		something_deleted = 0
+
+		local tuple = box.delete(2, email)
+		if tuple ~= nil then something_deleted = 1 end
+
+		local tuples = { box.select_limit(3, 1, 0, 1000, email) }
+		for _, tuple in pairs(tuples) do
+			tuple = box.delete(3, box.unpack('l', tuple[0]))
+			something_deleted = 1
+		end
+
+		tuples = { box.select_limit(0, 1, 0, 1000, email) }
+		for _, tuple in pairs(tuples) do
+			tuple = box.delete(0, box.unpack('l', tuple[0]))
+			something_deleted = 1
+		end
+	until something_deleted == 0
+end
+
+--
 -- Run expiration of tuples
 --
 
