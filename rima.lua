@@ -135,7 +135,7 @@ function rima_get_user_tasks(key, source)
 	local lock_acquired = rima_lock(key, source)
 	if lock_acquired == 0 then
 		local pr = box.select_limit(2, 0, 0, 1, key)
-		if pr[4] ~= source then return end
+		if pr[4] ~= source and source ~= "force_run" then return end
 		lock_acquired = 1
 	end
 
