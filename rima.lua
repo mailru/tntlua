@@ -37,7 +37,6 @@ local EXPIRATION_TIME = 30 * 60 -- seconds
 -- Put task to the queue.
 --
 local function rima_put_impl(key, data, prio, ts)
-	if ts == 0 then ts = box.time() end
 	-- insert task data into the queue
 	box.auto_increment(0, key, data, ts)
 	-- increase priority of the key
@@ -50,13 +49,13 @@ local function rima_put_impl(key, data, prio, ts)
 end
 
 function rima_put(key, data) -- deprecated
-	rima_put_impl(key, data, 512, 0)
+	rima_put_impl(key, data, 512, box.time())
 end
 
 function rima_put_with_prio(key, data, prio)
 	prio = box.unpack('i', prio)
 
-	rima_put_impl(key, data, prio, 0)
+	rima_put_impl(key, data, prio, box.time())
 end
 
 function rima_put_with_prio_and_ts(key, data, prio, ts)
