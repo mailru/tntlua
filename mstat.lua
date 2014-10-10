@@ -3,7 +3,6 @@ local from_space = 1
 local envfrom_space = 2
 local sender_ip_space = 3
 local dkim_msgtype_ts_space = 4
-local dkim_senderip_space = 5
 
 local field_last = 4
 local field_count = 10
@@ -144,39 +143,6 @@ local function increment_stat(space, key, users, spam_users, prob_spam_users, in
     end
 end
 
-local function increment_stat2(space, key, element1, element2, users, spam_users, prob_spam_users, inv_users)
-    local retry = true
-    local count = 0
-    while retry do
-        local status, result = pcall(box.update, space, key, '+p+p+p+p', 2, users, 3, spam_users, 4, prob_spam_users, 5, inv_users)
-        if status then
-        --success update or tuple is not exist
-            retry = false
-            if result == nil then
-            --insert new tuple
-                local tuple = {}
-                for i = 2, field_count + 2 do tuple[i] = 0 end
-                tuple[1] = string.sub(key, -8)
-                tuple[2] = users
-                tuple[3] = spam_users
-                tuple[4] = prob_spam_users
-                tuple[5] = inv_users
-                tuple[field_count + 1] = element1
-                tuple[field_count + 2] = element2
-                box.insert(space, key, unpack(tuple))
-           end
-        else
-        --exception
-            count = count + 1
-            if count == max_attempts then
-                print("max attempts reached for space="..space.." key="..key)
-                break
-            end
-            box.fiber.sleep(timeout)
-        end
-    end
-end
-
 local function fetch_blacklist(conn, space)
     assert(conn:timeout(1):ping(), "Tarantool is unreachable")
 
@@ -256,11 +222,6 @@ function mstat_add(
     end
     if sender_ip ~= "" then
         increment_stat(sender_ip_space, sender_ip..time_str, users, spam_users, prob_spam_users, inv_users)
-    end
-    for i = 1, #dkim_domains do
-        if dkim_domains[i] ~= "" and sender_ip ~= "" then
-            increment_stat2(dkim_senderip_space, dkim_domains[i].."|"..sender_ip..time_str, dkim_domains[i], sender_ip, users, spam_users, prob_spam_users, inv_users)
-        end
     end
     for i = 1, #dkim_domains do
         if dkim_domains[i] ~= "" and msgtype ~= "" then
