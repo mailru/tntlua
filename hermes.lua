@@ -8,7 +8,7 @@
 
 --
 -- Space 0: Folder Bindings and IMAP Collector State.
---   Tuple: { coll_id (NUM), rmt_fld_id (STR), fld_id (NUM), uid_validity (NUM), up_uid (NUM), down_uid (NUM), up_date (NUM), down_date (NUM), modseq (STR) }
+--   Tuple: { coll_id (NUM), rmt_fld_id (STR), fld_id (NUM), uid_validity (NUM), up_uid (NUM), down_uid (NUM), up_date (NUM), down_date (NUM), modseq (STR), state (STR) }
 --   Index 0: TREE { coll_id, rmt_fld_id }
 --
 
@@ -83,5 +83,11 @@ end
 function hermes_update_modseq(coll_id, rmt_fld_id, modseq)
 	coll_id = box.unpack('i', coll_id)
 	local t = box.update(0, { coll_id, rmt_fld_id }, "=p", 8, modseq)
+	if t ~= nil then return 1 else return 0 end
+end
+
+function hermes_update_state(coll_id, rmt_fld_id, state)
+	coll_id = box.unpack('i', coll_id)
+	local t = box.update(0, { coll_id, rmt_fld_id }, "=p", 9, state)
 	if t ~= nil then return 1 else return 0 end
 end
