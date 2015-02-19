@@ -88,6 +88,9 @@ end
 
 function hermes_update_state(coll_id, rmt_fld_id, state)
 	coll_id = box.unpack('i', coll_id)
-	local t = box.update(0, { coll_id, rmt_fld_id }, "=p", 9, state)
+	local status, t = pcall(box.update, 0, { coll_id, rmt_fld_id }, "=p", 9, state)
+	if not status then
+		t = box.update(0, { coll_id, rmt_fld_id }, "=p=p", 8, "", 9, state)
+	end
 	if t ~= nil then return 1 else return 0 end
 end
