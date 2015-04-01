@@ -49,7 +49,7 @@ function get_sender_list_by_offset(offset, limit)
 
     local ret = {}
     local orig = {box.select_limit(0, 0, offset, limit)}
-    for _, tuple in ipairs(orig) do
+    for _, tuple in pairs(orig) do
         table.insert(ret, tuple:transform(5, 1))
     end
 
@@ -60,7 +60,7 @@ function get_sender_list_by_ids(...)
     local ret = { }
     for i, v in ipairs({...}) do
         local tuples = {box.select(0, 0, box.unpack('i', v))}
-        for _, tuple in ipairs(tuples) do
+        for _, tuple in pairs(tuples) do
             table.insert(ret, tuple:transform(5, 1))
         end
     end
@@ -70,7 +70,7 @@ end
 function selist2_search_by_mask(mask)
     local ret = { }
     local orig = {box.select(0, 1, mask)}
-    for _, tuple in ipairs(orig) do
+    for _, tuple in pairs(orig) do
         table.insert(ret, tuple:transform(5, 1))
     end
     return unpack(ret)
@@ -79,7 +79,7 @@ end
 function selist2_search_by_domain(domain)
     local ret = { }
     local orig = {box.select(0, 2, domain)}
-    for _, tuple in ipairs(orig) do
+    for _, tuple in pairs(orig) do
         table.insert(ret, tuple:transform(5, 1))
     end
     return unpack(ret)
