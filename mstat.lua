@@ -49,6 +49,9 @@ end
 -- BEG deprecated interface
 
 function increment_or_insert(space, key, field)
+    if tostring(space) == '5' then
+        return
+    end
     local retry = true
     local count = 0
     while retry do
@@ -77,6 +80,9 @@ function increment_or_insert(space, key, field)
 end
 
 function increment_or_insert_2(space, key, field, element1, element2)
+    if tostring(space) == '5' then
+        return
+    end
     local retry = true
     local count = 0
     while retry do
@@ -107,6 +113,9 @@ function increment_or_insert_2(space, key, field, element1, element2)
 end
 
 function update_or_insert(space, key, subject, timestamp)
+    if tostring(space) == '5' then
+        return
+    end
     increment_stat3(space, key, subject, timestamp)
 end
 
