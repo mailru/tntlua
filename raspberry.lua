@@ -308,7 +308,7 @@ function senders2_update_flags_2(uid, ...)
     for i = 1, #list, 4 do
         local sid, flags, fld1, fld2 = box.unpack('i', list[i]), box.unpack('i', list[i + 1]), box.unpack('i', list[i + 2]), box.unpack('i', list[i + 3])
         if senders[sid] then
-            senders[sid][3] = flags
+            senders[sid][3], senders[sid][4], senders[sid][5] = flags, fld1, fld2
         else
             senders[sid] = { sid, 0, flags, fld1, fld2 }
         end
