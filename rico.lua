@@ -9,13 +9,25 @@
 --
 -- Space 0: Stores last collect time, last success collect time and so on.
 --   Tuple: { coll_id (NUM), last_time (NUM), last_ok (NUM), old_threshold (NUM), last_fullsync (NUM), success_collects_num (NUM) }
---   Index 0: HASH { coll_id }
+--   Index 0: TREE { coll_id }
 --
 
 function rico_get(coll_id)
 	coll_id = box.unpack('i', coll_id)
 	local t = box.select_limit(0, 0, 0, 1, coll_id)
 	if t ~=nil then return t:transform(0,1) end
+end
+
+function rico_get_lasttimes(from_coll_id, to_coll_id)
+	from_coll_id = box.unpack('i', from_coll_id)
+	to_coll_id = box.unpack('i', to_coll_id)
+
+	local result = {}
+	for t in box.space[0].index[0]:iterator(box.index.GE, from_coll_id) do
+		if box.unpack('i', t[0]) >= to_coll_id then break end
+		table.insert(result, { t:slice(0, 2) })
+	end
+	return unpack(result)
 end
 
 function rico_reset(coll_id)
