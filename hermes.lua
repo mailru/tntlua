@@ -40,7 +40,11 @@ function hermes_update(coll_id, rmt_fld_id, fld_id, uid_validity, up_uid, down_u
 	down_uid = box.unpack('i', down_uid)
 	up_date = box.unpack('i', up_date)
 	down_date = box.unpack('i', down_date)
-	box.replace(0, coll_id, rmt_fld_id, fld_id, uid_validity, up_uid, down_uid, up_date, down_date)
+
+	local status, _ = pcall(box.update, 0, { coll_id, rmt_fld_id }, "=p=p=p=p=p=p", 2, fld_id, 3, uid_validity, 4, up_uid, 5, down_uid, 6, up_date, 7, down_date)
+	if not status then
+		box.replace(0, coll_id, rmt_fld_id, fld_id, uid_validity, up_uid, down_uid, up_date, down_date)
+	end
 end
 
 function hermes_drop_by_rmt_fld(coll_id, rmt_fld_id)
