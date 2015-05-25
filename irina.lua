@@ -177,7 +177,7 @@ function irina_del_collector(addr, notify_deleted_shard)
 	end
 
 	addrs[addr] = nil
-	local addr_shards = irina_get_shards(addr)
+	local addr_shards = irina_get_shards_impl(addr)
 	local n_addr_shards = get_table_size(addr_shards)
 
 	while n_addr_shards > 0 do
@@ -203,13 +203,18 @@ function irina_del_collector(addr, notify_deleted_shard)
 	end
 end
 
-function irina_get_shards(addr)
+function irina_get_shards_impl(addr)
 	local result = {}
 	for tuple in box.space[1].index[0]:iterator(box.index.ALL) do
 		local curr_shardid = box.unpack('i', tuple[0])
 		if tuple[1] == addr then table.insert(result, curr_shardid) end
 	end
 	return result
+end
+
+function irina_get_shards(addr)
+	local result = irina_get_shards_impl(addr)
+	return unpack(result)
 end
 
 local function update_record(email, set_instant, set_expirable)
