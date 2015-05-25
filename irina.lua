@@ -203,18 +203,13 @@ function irina_del_collector(addr, notify_deleted_shard)
 	end
 end
 
-function irina_get_shards_impl(addr)
+function irina_get_shards(addr)
 	local result = {}
 	for tuple in box.space[1].index[0]:iterator(box.index.ALL) do
 		local curr_shardid = box.unpack('i', tuple[0])
 		if tuple[1] == addr then table.insert(result, curr_shardid) end
 	end
 	return result
-end
-
-function irina_get_shards(addr)
-	local result = irina_get_shards_impl(addr)
-	return unpack(result)
 end
 
 local function update_record(email, set_instant, set_expirable)
@@ -302,7 +297,7 @@ function irina_get_instant_users_ex(shardid)
 	for tuple in box.space[0].index[1]:iterator(box.index.EQ, 1, shardid) do
 		table.insert(result, { tuple[0], box.unpack('i', tuple[1]), box.unpack('i', tuple[3]) })
 	end
-	return unpack(result)
+	return result
 end
 
 function irina_get_usual_users(shardid)
@@ -311,7 +306,7 @@ function irina_get_usual_users(shardid)
 	for tuple in box.space[0].index[1]:iterator(box.index.EQ, 0, shardid) do
 		table.insert(result, { tuple[0], box.unpack('i', tuple[1]) })
 	end
-	return unpack(result)
+	return result
 end
 
 local function is_expired(args, tuple)
