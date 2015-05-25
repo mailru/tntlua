@@ -177,7 +177,7 @@ function irina_del_collector(addr, notify_deleted_shard)
 	end
 
 	addrs[addr] = nil
-	local addr_shards = irina_get_shards_impl(addr)
+	local addr_shards = irina_get_shards(addr)
 	local n_addr_shards = get_table_size(addr_shards)
 
 	while n_addr_shards > 0 do
