@@ -71,3 +71,8 @@ function rico_update_failure(coll_id, need_update_last_fullsync)
 		box.replace(0, coll_id, box.time(), box.time(), box.time(), box.time(), 0)
 	end
 end
+
+function rico_drop(coll_id)
+	coll_id = box.unpack('i', coll_id)
+	local t = box.delete(0, coll_id)
+end
