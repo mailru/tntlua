@@ -302,7 +302,8 @@ function irina_get_instant_users_ex(shardid)
 	for tuple in box.space[0].index[1]:iterator(box.index.EQ, 1, shardid) do
 		table.insert(result, { tuple[0], box.unpack('i', tuple[1]), box.unpack('i', tuple[3]) })
 	end
-	return result
+	if #result > 0 then return result end
+	return unpack(result)
 end
 
 function irina_get_usual_users(shardid)
@@ -311,7 +312,8 @@ function irina_get_usual_users(shardid)
 	for tuple in box.space[0].index[1]:iterator(box.index.EQ, 0, shardid) do
 		table.insert(result, { tuple[0], box.unpack('i', tuple[1]) })
 	end
-	return result
+	if #result > 0 then return result end
+	return unpack(result)
 end
 
 local function is_expired(args, tuple)
