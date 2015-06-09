@@ -27,7 +27,8 @@ function rico_get_lasttimes(from_coll_id, to_coll_id)
 		if box.unpack('i', t[0]) >= to_coll_id then break end
 		table.insert(result, { t:slice(0, 2) })
 	end
-	return result
+	if #result > 0 then return result end
+	return unpack(result)
 end
 
 function rico_reset(coll_id)
