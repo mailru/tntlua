@@ -152,6 +152,8 @@ function senders2_update_stat(uid, update_flags, total, unread, ignore, delete, 
                         senders[sid][2] = senders[sid][2] + total
                     end
                     senders[sid][3] = flags
+                    senders[sid][4] = fld1
+                    senders[sid][5] = fld2
                 else
                     if not flag_is_set(update_flags, FLAG_REPLACE_SENDERS) then
                         senders[sid] = { sid, total, flags, fld1, fld2 }
