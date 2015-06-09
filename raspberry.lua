@@ -93,9 +93,9 @@ function senders2_update_stat(uid, update_flags, total, unread, ignore, delete, 
     local tuple = box.select(0, 0, uid)
     local version = tuple and #tuple > TUPLE_VERSION and box.unpack('w', tuple[TUPLE_VERSION]) or 1
 
-    if tuple and #list < 1 and not flag_is_set(update_flags, FLAG_REPLACE_SENDERS) then
-        return -- don't update
-    end
+    --if tuple and #list < 1 and not flag_is_set(update_flags, FLAG_REPLACE_SENDERS) then
+    --    return -- don't update
+    --end
 
     -- backup
     if tuple and version == 1 and BACKUP_V1_SPACENO then
@@ -167,6 +167,11 @@ function senders2_update_stat(uid, update_flags, total, unread, ignore, delete, 
             senders_count = senders_count + 1
             packed_senders = packed_senders .. box.pack('wwwww', unpack(v))
             version = 2
+        end
+    else
+        if tuple and not flag_is_set(update_flags, FLAG_REPLACE_SENDERS) then
+            senders_count = box.unpack('w', tuple[2])
+            packed_senders = tuple[3]
         end
     end
 
