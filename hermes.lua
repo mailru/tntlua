@@ -11,6 +11,14 @@
 --   Tuple: { coll_id (NUM), rmt_fld_id (STR), fld_id (NUM), uid_validity (NUM), up_uid (NUM), down_uid (NUM), up_date (NUM), down_date (NUM), modseq (STR), state (STR) }
 --   Index 0: TREE { coll_id, rmt_fld_id }
 --
+-- Space 1: Errors that occurred during synchronization of local changes on the remote side.
+--   Tuple: { email (STR), error_index (NUM), description (STR) }
+--   Index 0: TREE { email, error_index }
+--
+--   Description field contains some tarantool independent information about a problem.
+--   Example:
+--     'test@mail.ru': {1, 'error while appending message on storage'}
+--
 
 function hermes_get(coll_id)
 	coll_id = box.unpack('i', coll_id)
