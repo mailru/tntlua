@@ -98,3 +98,37 @@ function hermes_update_state(coll_id, rmt_fld_id, state)
 	end
 	if t ~= nil then return 1 else return 0 end
 end
+
+local function get_key_cardinality_and_max_msgid(key)
+	-- TODO: optimize (replace by calculation cardinality of a key in the index)
+	local data = { box.select(1, 0, key) }
+	local n = #data
+	if n == 0 then
+		return 0, 0
+	end
+	return n, box.unpack('i', data[n][1])
+end
+
+function hermes_error_add(key, err_content)
+	local done = nil
+	while not done do
+		local _, max_id = get_key_cardinality_and_max_msgid(key)
+		done = box.insert(1, key, max_id + 1, err_content)
+	end
+end
+
+function hermes_errors_del(key, ...)
+	local local_indexes = {...}
+	for i = 1, #local_indexes do
+		box.delete(1, key, box.unpack('i', local_indexes[i]))
+	end
+end
+
+function hermes_error_replace(key, err_no, new_content)
+	err_no = box.unpack('i', err_no)
+	box.replace(1, key, err_no, new_content)
+end
+
+function hermes_errors_get(key)
+	return { box.select(1, 0, key) }
+end
