@@ -31,7 +31,7 @@ end
 -- get fiber id function
 local function get_fid(fiber)
     local fid = 0
-    if fiber ~= nil and fiber:status() ~= "dead" then
+    if fiber ~= nil and box.fiber.status(fiber) ~= "dead" then
         fid = fiber:id()
     end
     return fid
