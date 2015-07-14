@@ -13,39 +13,43 @@
 --   Index 0: TREE { shard_id }
 --
 
-local function parse_addr(addr)
+local N_SHARDS = 1024
+
+local function send_instant_cmd(addr, cmd)
+	local msg = "[instant: " .. addr .. ", cmd: " .. cmd .. "]"
+
 	local ind = addr:find(":")
-	if ind == nil then return nil end
+	if ind == nil then return "invalid address " .. msg end
+	local host = addr:sub(0, ind - 1)
+	local port = tonumber(addr:sub(ind + 1))
 
-	return addr:sub(0, ind - 1), tonumber(addr:sub(ind + 1))
-end
-
-local function send_collector_cmd(addr, cmd)
 	local s = box.socket.tcp()
-	if s == nil then
-		print("can not create collector socket")
-		return false
-	end
-
-	local host, port = parse_addr(addr)
+	if s == nil then return "can not create socket " .. msg end
 
 	if not s:connect(host, port, 0.1) then
 		local _, errstr = s:error()
-		print("can not connect to collector[" .. host .. ":" .. port .. "]: " .. errstr)
 		s:close()
-		return false
+		return "can not connect " .. msg .. ": " .. errstr
 	end
 
 	local bytes_sent, status, errno, errstr = s:send(cmd, 0.1)
 	if bytes_sent ~= #cmd then
 		local _, errstr = s:error()
-		print("can not send data to collector[" .. host .. ":" .. port .. "]: " .. errstr)
 		s:close()
-		return false
+		return "can not send data " .. msg .. ": " .. errstr
+	end
+
+	local response = s:readline()
+
+	if response == nil then
+		local _, errstr = s:error()
+		s:close()
+		return "empty response " .. msg .. ": " .. errstr
 	end
 
 	s:close()
-	return true
+
+	return "instant response " .. msg .. ": " .. response
 end
 
 local function get_collector_address(shardid)
@@ -59,161 +63,219 @@ end
 --
 local function send_change_status(email, userid, shardid, enabled, expirable)
 	local addr = get_collector_address(shardid)
-	if addr == nil then return end
+	if addr == nil then return "shard does not binded" end
 
 	local data = email .. " " .. userid .. " " .. enabled .. " " .. expirable
-	send_collector_cmd(addr, data)
+	return send_instant_cmd(addr, data)
 end
 local function send_add_shard(addr, shardid)
 	local data = "add_shard " .. shardid
-	send_collector_cmd(addr, data)
+	return send_instant_cmd(addr, data)
 end
 local function send_del_shard(addr, shardid)
 	local data = "del_shard " .. shardid
-	send_collector_cmd(addr, data)
+	return send_instant_cmd(addr, data)
 end
 
-local function get_table_size(t)
-	local n = 0
-	for _, _ in pairs(t) do n = n + 1 end
-	return n
+local function bind_shards_to_addr(errors, shards, addr, notify_added_shard, notify_deleted_shard)
+	local need_wait = false
+	for _, shardid in pairs(shards) do
+		local prev_addr = get_collector_address(shardid)
+		box.replace(1, shardid, addr)
+		if prev_addr ~= nil and notify_deleted_shard ~= 0 then
+			local msg = send_del_shard(prev_addr, shardid)
+			table.insert(errors, box.tuple.new({msg}))
+			need_wait = true
+		end
+	end
+
+	if notify_added_shard == 0 then return end
+
+	-- give the time for applying shard deletion
+	if need_wait then box.fiber.sleep(5) end
+
+	for _, shardid in pairs(shards) do
+		local msg = send_add_shard(addr, shardid)
+		table.insert(errors, box.tuple.new({msg}))
+	end
+end
+
+local function unbind_shards_from_addr(errors, shards, addr, notify_added_shard, notify_deleted_shard)
+	for _, shardid in pairs(shards) do
+		local prev_addr = get_collector_address(shardid)
+		box.delete(1, shardid)
+		if prev_addr ~= nil and notify_deleted_shard ~= 0 then
+			local msg = send_del_shard(prev_addr, shardid)
+			table.insert(errors, box.tuple.new({msg}))
+		end
+	end
+end
+
+local function get_shards_distribution()
+	local n_addrs = 0
+	local addrs = {}
+	for t in box.space[1].index[0]:iterator(box.index.ALL) do
+		local curr_shardid = box.unpack('i', t[0])
+		local curr_addr = t[1]
+		if addrs[curr_addr] == nil then
+			addrs[curr_addr] = {}
+			n_addrs = n_addrs + 1
+		end
+		table.insert(addrs[curr_addr], curr_shardid)
+	end
+	return n_addrs, addrs
+end
+
+local function get_minmax_loaded_addrs(addrs)
+	local min_addr = nil
+	local min_n = N_SHARDS + 1
+	local max_addr = nil
+	local max_n = 0
+	for addr, shards in pairs(addrs) do
+		local n = table.getn(shards)
+		if n > max_n then
+			max_addr = addr
+			max_n = n
+		end
+		if n < min_n then
+			min_addr = addr
+			min_n = n
+		end
+	end
+	return min_addr, max_addr
 end
 
 function irina_add_collector_for(addr, shardid, notify_added_shard, notify_deleted_shard)
 	shardid = tonumber(shardid)
-	notify_added_shard = tonumber(notify_added_shard)
-	notify_deleted_shard = tonumber(notify_deleted_shard)
+	notify_added_shard = tonumber(notify_added_shard) or 1
+	notify_deleted_shard = tonumber(notify_deleted_shard) or 1
 
-	if shardid < 0 or shardid > 1023 then error("shard id must be in [0,1023] range") end
-	if notify_added_shard == nil then notify_added_shard = 1 end
-	if notify_deleted_shard == nil then notify_deleted_shard = 1 end
-
-	local tuple = box.select_limit(1, 0, 0, 1, shardid)
-
-	if tuple == nil then
-		box.insert(1, shardid, addr)
-		if notify_added_shard ~= 0 then send_add_shard(addr, shardid) end
-	else
-		local prev_addr = tuple[1]
-		print("rebind shard #" .. shardid .. " from " .. prev_addr .. " to " .. addr)
-		box.replace(1, shardid, addr)
-		if notify_deleted_shard ~= 0 then
-			send_del_shard(prev_addr, shardid)
-		end
-		if notify_added_shard ~= 0 then
-			box.fiber.sleep(0.1)
-			send_add_shard(addr, shardid)
-		end
+	if shardid < 0 or shardid >= N_SHARDS then
+		return "invalid shard id"
 	end
+
+	local prev_addr = get_collector_address(shardid)
+	if prev_addr ~= nil and prev_addr == addr then
+		return "shard already binded to this addr"
+	end
+
+	local errors = {}
+	bind_shards_to_addr(errors, { shardid }, addr, notify_added_shard, notify_deleted_shard)
+	return unpack(errors)
 end
 
-function irina_add_collector(addr, notify_added_shard)
-	notify_added_shard = tonumber(notify_added_shard)
+function irina_add_collector(addr, notify_added_shard, notify_deleted_shard)
+	notify_added_shard = tonumber(notify_added_shard) or 1
+	notify_deleted_shard = tonumber(notify_deleted_shard) or 1
 
-	local addrs = {}
-	for tuple in box.space[1].index[0]:iterator(box.index.ALL) do
-		local curr_addr = tuple[1]
-		if curr_addr == addr then
-			print("already has collector with addr " .. addr)
-			return
-		end
-		if addrs[curr_addr] == nil then addrs[curr_addr] = 1
-		else addrs[curr_addr] = addrs[curr_addr] + 1 end
+	local n_addrs, addrs = get_shards_distribution()
+
+	if n_addrs == 0 then
+		local new_shards = {}
+		for i = 0, N_SHARDS-1 do table.insert(new_shards, i) end
+		local errors = {}
+		bind_shards_to_addr(errors, new_shards, addr, notify_added_shard, notify_deleted_shard)
+		return unpack(errors)
 	end
 
-	local n_collectors = get_table_size(addrs)
-
-	if n_collectors == 0 then
-		for i = 0, 1023 do
-			print("bind shard #" .. i .. " to " .. addr)
-			box.insert(1, i, addr)
-			if notify_added_shard ~= 0 then send_add_shard(addr, i) end
-		end
-		return
+	if addrs[addr] ~= nil then
+		return "already added"
 	end
 
-	local new_count = 1024 / (n_collectors + 1)
-
-	for tuple in box.space[1].index[0]:iterator(box.index.ALL) do
-		local curr_shardid = box.unpack('i', tuple[0])
-		local curr_addr = tuple[1]
-
-		if addrs[curr_addr] > new_count then
-			addrs[curr_addr] = addrs[curr_addr] - 1
-			print("rebind shard #" .. curr_shardid .. " from " .. curr_addr .. " to " .. addr)
-			box.replace(1, curr_shardid, addr)
-			send_del_shard(curr_addr, curr_shardid)
-			if notify_added_shard ~= 0 then
-				box.fiber.sleep(0.1)
-				send_add_shard(addr, curr_shardid)
+	-- Ignore small shards (created by irina_add_collector_for) in resharding process.
+	-- It may have special meaning (test shard or another).
+	local n_manual_shards = 0
+	do
+		local min_threshold = math.floor(N_SHARDS / n_addrs)
+		local manual_addrs = {}
+		for a, s in pairs(addrs) do
+			if table.getn(s) < min_threshold then
+				table.insert(manual_addrs, a)
 			end
 		end
+		for _, a in pairs(manual_addrs) do
+			local manual_shards = addrs[a]
+			n_manual_shards = n_manual_shards + table.getn(manual_shards)
+			addrs[a] = nil
+			n_addrs = n_addrs - 1
+		end
 	end
+
+	local new_count = (N_SHARDS - n_manual_shards) / (n_addrs + 1)
+
+	local new_shards = {}
+	for i = 1, new_count do
+		local _, addr = get_minmax_loaded_addrs(addrs)
+		local shardid = table.remove(addrs[addr], 1)
+		table.insert(new_shards, shardid)
+	end
+
+	local errors = {}
+	bind_shards_to_addr(errors, new_shards, addr, notify_added_shard, notify_deleted_shard)
+	return unpack(errors)
 end
 
-function irina_del_collector(addr, notify_deleted_shard)
-	notify_deleted_shard = tonumber(notify_deleted_shard)
+function irina_del_collector(addr, notify_added_shard, notify_deleted_shard)
+	notify_added_shard = tonumber(notify_added_shard) or 1
+	notify_deleted_shard = tonumber(notify_deleted_shard) or 1
 
-	local addrs = {}
-	for tuple in box.space[1].index[0]:iterator(box.index.ALL) do
-		local curr_addr = tuple[1]
-		addrs[curr_addr] = 1
-	end
+	local n_addrs, addrs = get_shards_distribution()
 
 	if addrs[addr] == nil then
-		print("collector with addr " .. addr .. " does not exist")
-		return
+		return "no such addr"
 	end
 
-	local n_collectors = get_table_size(addrs)
-
-	if n_collectors == 1 then
-		for i = 0, 1023 do
-			print("unbind shard #" .. i .. " from " .. addr)
-			box.delete(1, i)
-			if notify_deleted_shard ~= 0 then send_del_shard(addr, i) end
-		end
-		return
-	end
-
+	local errors = {}
+	local shards = addrs[addr]
 	addrs[addr] = nil
-	local addr_shards = irina_get_shards_impl(addr)
-	local n_addr_shards = get_table_size(addr_shards)
+	n_addrs = n_addrs - 1
+	unbind_shards_from_addr(errors, shards, addr, notify_added_shard, notify_deleted_shard)
 
-	while n_addr_shards > 0 do
-		for curr_addr, _ in pairs(addrs) do
-			if n_addr_shards > 0 then
-				local shardid = nil
-				for k, v in pairs(addr_shards) do
-					shardid = v
-					table.remove(addr_shards, k)
-					n_addr_shards = n_addr_shards - 1
-					do break end
-				end
+	if n_addrs == 0 then return unpack(errors) end
 
-				print("rebind shard #" .. shardid .. " from " .. addr .. " to " .. curr_addr)
-				box.replace(1, shardid, curr_addr)
-				if notify_deleted_shard ~= 0 then
-					send_del_shard(addr, shardid)
-					box.fiber.sleep(0.1)
-				end
-				send_add_shard(curr_addr, shardid)
-			end
-		end
+	for _, shardid in pairs(shards) do
+		local new_addr, _ = get_minmax_loaded_addrs(addrs)
+		table.insert(addrs[new_addr], shardid)
+		bind_shards_to_addr(errors, {shardid}, new_addr, notify_added_shard, notify_deleted_shard)
 	end
+
+	return unpack(errors)
 end
 
-function irina_get_shards_impl(addr)
-	local result = {}
-	for tuple in box.space[1].index[0]:iterator(box.index.ALL) do
-		local curr_shardid = box.unpack('i', tuple[0])
-		if tuple[1] == addr then table.insert(result, curr_shardid) end
+function irina_show_shards_distribution()
+	local n, addrs = get_shards_distribution()
+
+	local unused = {}
+	for i = 0, N_SHARDS-1 do unused[i] = 1 end
+
+	local ret = {}
+	for k, v in pairs(addrs) do
+		table.sort(v)
+		for _, shardid in pairs(v) do unused[shardid] = 0 end
+		local shards_str = table.concat(v, ",")
+		table.insert(ret, box.tuple.new({k, shards_str}))
 	end
-	return result
+
+	local unbinded = {}
+	for k, v in pairs(unused) do
+		if v ~= 0 then table.insert(unbinded, k) end
+	end
+
+	if table.getn(unbinded) > 0 then
+		table.sort(unbinded)
+		local shards_str = table.concat(unbinded, ",")
+		table.insert(ret, box.tuple.new({"unbinded_shards", shards_str}))
+	end
+
+	return unpack(ret)
 end
 
 function irina_get_shards(addr)
-	local result = irina_get_shards_impl(addr)
+	local result = {}
+	for t in box.space[1].index[0]:iterator(box.index.ALL) do
+		local curr_shardid = box.unpack('i', t[0])
+		if t[1] == addr then table.insert(result, curr_shardid) end
+	end
 	return unpack(result)
 end
 
