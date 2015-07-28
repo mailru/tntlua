@@ -1,0 +1,38 @@
+return {
+	box = {
+		--replication_source = 'host:port',
+
+		listen = 3311,
+		log_level = 6, -- debug
+		logger = '/var/log/flyd.log'
+	},
+
+	http_server = {
+		host = '0.0.0.0',
+		port = 8080
+	},
+
+	console = '127.0.0.1:3312',
+
+	use_gamma_url = true,
+	proxy_servers = {
+		'127.0.0.1',
+	},
+
+	callback_host = '127.0.0.1:8080',
+
+	path_to_iata_codes = 'dictionary.lua',
+
+	-- minimum interval between `delay' callbacks (in minutes)
+	dep_delay_delta = 5,
+
+	-- interval between http requests to provider (in case they are failed)
+	retry_timeout = 60,
+
+	prepare_secure = function(url, time)
+		return 'secure link part'
+	end,
+
+	app_key = 'appKey from developer.flightstats.com',
+	app_id = 'appId from developer.flightstats.com'
+}
