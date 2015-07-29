@@ -107,21 +107,37 @@ function hermes_update_state(coll_id, rmt_fld_id, state)
 	if t ~= nil then return 1 else return 0 end
 end
 
-local function get_key_cardinality_and_max_msgid(key)
-	-- TODO: optimize (replace by calculation cardinality of a key in the index)
-	local data = { box.select(1, 0, key) }
-	local n = #data
-	if n == 0 then
-		return 0, 0
-	end
-	return n, box.unpack('i', data[n][1])
-end
 
-function hermes_error_add(key, err_content)
+local MAX_STORED_ERRORS = 50
+
+function hermes_error_add(key, timestamp, error_description)
 	local done = nil
+	timestamp = box.unpack('i', timestamp)
+
 	while not done do
-		local _, max_id = get_key_cardinality_and_max_msgid(key)
-		done = box.insert(1, key, max_id + 1, err_content)
+		local data = { box.select(1, 0, key) }
+		local count = #data
+		local min_id, max_id = 0, 0
+
+		if count ~= 0 then
+			-- Records are in the correct order throwgh tarantool index format
+			min_id = box.unpack('i', data[1][1])
+			max_id = box.unpack('i', data[count][1])
+		end
+
+		for _, v in pairs(data) do
+			-- To prevent records duplicates
+			if v[3] == error_description then
+				return
+			end
+		end
+
+		if count >= MAX_STORED_ERRORS then
+			-- Remove oldest record
+			box.delete(1, key, min_id)
+		end
+
+		done = box.insert(1, key, max_id + 1, timestamp, error_description)
 	end
 end
 
@@ -139,4 +155,11 @@ end
 
 function hermes_errors_get(key)
 	return { box.select(1, 0, key) }
+end
+
+function hermes_errors_clear(key)
+	local data = { box.select(1, 0, key) }
+	for _, v in pairs(data) do
+		box.delete(1, key, box.unpack('i', v[1]))
+	end
 end
