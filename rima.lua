@@ -46,6 +46,7 @@ local function rima_put_impl(key, data, prio, ts)
 	elseif box.unpack('i', pr[1]) < prio then
 		box.update(2, key, "=p", 1, prio)
 	end
+	return 1
 end
 
 function rima_put(key, data) -- deprecated
@@ -63,6 +64,12 @@ function rima_put_with_prio_and_ts(key, data, prio, ts)
 	ts = box.unpack('i', ts)
 
 	rima_put_impl(key, data, prio, ts)
+end
+
+function rima_put_sync(key, data, prio)
+	prio = box.unpack('i', prio)
+
+	return rima_put_impl(key, data, prio, box.time())
 end
 
 --
