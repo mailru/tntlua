@@ -79,6 +79,8 @@ local function flyd_process_update_cancelled(flight)
 end
 
 local function flyd_process_update_diverted(flight, rule, fs)
+	local func = 'flyd_process_update_diverted'
+
 	local carrier, fnum, day, month, year, need_insert
 	local r2upd = {}
 
@@ -160,18 +162,18 @@ local function flyd_process_update_diverted(flight, rule, fs)
 	end
 
 	if #r2upd == 0 then
-		log.info("flight `%u': nothing to update (diverted)", flight[FLIGHT_IDX.ID])
+		log.info("%s: flight `%u': nothing to update (diverted)", func, flight[FLIGHT_IDX.ID])
 		return { status = 200 }
 	end
 
 	for i = 1,#r2upd do
-		log.debug("flight `%u': field `%s' will be set to `%s'",
-			  flight[FLIGHT_IDX.ID], r2upd[i][2], r2upd[i][3])
+		log.debug("%s: flight `%u': field `%s' will be set to `%s'",
+			  func, flight[FLIGHT_IDX.ID], r2upd[i][2], r2upd[i][3])
 	end
 
 	local ok, ret = pcall(flights.update, flights, flight[FLIGHT_IDX.ID], r2upd)
 	if not ok then
-		log.error("flight `%u': update failed: %s", flight[FLIGHT_IDX.ID], ret)
+		log.error("%s: flight `%u': update failed: %s", func, flight[FLIGHT_IDX.ID], ret)
 		return { status = 400 }
 	end
 
@@ -181,7 +183,7 @@ local function flyd_process_update_diverted(flight, rule, fs)
 
 	year, month, day = string.match(departure_date, "^(%d+)-(%d+)-(%d+)")
 	if not year then
-		log.error("flight `%u': can't parse date `%s'", flight[FLIGHT_IDX.ID], departure_date)
+		log.error("%s: flight `%u': can't parse date `%s'", func, flight[FLIGHT_IDX.ID], departure_date)
 		return { status = 400 }
 	end
 
@@ -191,16 +193,18 @@ local function flyd_process_update_diverted(flight, rule, fs)
 		tonumber(year), FLYD_STATUS.DONE, flight[FLIGHT_IDX.ID]
 	})
 	if not ok then
-		log.error("flight `%u': query insert failed: %s", flight[FLIGHT_IDX.ID], ret)
+		log.error("%s: flight `%u': query insert failed: %s", func, flight[FLIGHT_IDX.ID], ret)
 	end
 
 	return { status = 200 }
 end
 
 local function flyd_process_update_arrival_gate(flight, fs)
+	local func = 'flyd_process_update_arrival_gate'
+
 	if not fs.airportResources then
-		log.warn("can't update arrival gate for flight `%u': `airportResources' missed",
-			 flight[FLIGHT_IDX.ID])
+		log.warn("%s: can't update arrival gate for flight `%u': `airportResources' missed",
+			 func, flight[FLIGHT_IDX.ID])
 
 		return { status = 400 }
 	end
@@ -208,39 +212,41 @@ local function flyd_process_update_arrival_gate(flight, fs)
 	local upd = {}
 	if fs.airportResources.arrivalGate and
 	   fs.airportResources.arrivalGate ~= flight[FLIGHT_IDX.ARR_GATE] then
-		log.info("flight `%u': arrivalGate set to `%s'",
-			 flight[FLIGHT_IDX.ID], fs.airportResources.arrivalGate)
+		log.info("%s: flight `%u': arrivalGate set to `%s'",
+			 func, flight[FLIGHT_IDX.ID], fs.airportResources.arrivalGate)
 
 		table.insert(upd, { '=', FLIGHT_IDX.ARR_GATE, fs.airportResources.arrivalGate })
 	end
 	if fs.airportResources.arrivalTerminal and
 	   fs.airportResources.arrivalTerminal ~= flight[FLIGHT_IDX.ARR_TERM] then
-		log.info("flight `%u': arrivalTerminal set to `%s'",
-			 flight[FLIGHT_IDX.ID], fs.airportResources.arrivalTerminal)
+		log.info("%s: flight `%u': arrivalTerminal set to `%s'",
+			 func, flight[FLIGHT_IDX.ID], fs.airportResources.arrivalTerminal)
 
 		table.insert(upd, { '=', FLIGHT_IDX.ARR_TERM, fs.airportResources.arrivalTerminal })
 	end
 
 	if #upd == 0 then
-		log.info("flight `%u': nothing to update (arrival gate)", flight[FLIGHT_IDX.ID])
+		log.info("%s: flight `%u': nothing to update (arrival gate)", func, flight[FLIGHT_IDX.ID])
 		return { status = 200 }
 	end
 
 	local ok, ret = pcall(flights.update, flights, flight[FLIGHT_IDX.ID], upd)
 	if not ok then
-		log.error("flight `%u', update failed: %s", flight[FLIGHT_IDX.ID], ret)
+		log.error("%s: flight `%u', update failed: %s", func, flight[FLIGHT_IDX.ID], ret)
 		return { status = 400 }
 	end
 
-	log.info("flight `%u': update success", flight[FLIGHT_IDX.ID])
+	log.info("%s: flight `%u': update success", func, flight[FLIGHT_IDX.ID])
 
 	return { status = 200 }
 end
 
 local function flyd_process_update_departure_gate(flight, fs)
+	local func = 'flyd_process_update_departure_gate'
+
 	if not fs.airportResources then
-		log.warn("can't update departure gate for flight `%u': `airportResources' missed",
-			 flight[FLIGHT_IDX.ID])
+		log.warn("%s: can't update departure gate for flight `%u': `airportResources' missed",
+			 func, flight[FLIGHT_IDX.ID])
 
 		return { status = 400 }
 	end
@@ -248,53 +254,54 @@ local function flyd_process_update_departure_gate(flight, fs)
 	local upd = {}
 	if fs.airportResources.departureGate and
 	   fs.airportResources.departureGate ~= flight[FLIGHT_IDX.DEP_GATE] then
-		log.info("flight `%u': departureGate set to `%s'",
-			 flight[FLIGHT_IDX.ID], fs.airportResources.departureGate)
+		log.info("%s: flight `%u': departureGate set to `%s'",
+			 func, flight[FLIGHT_IDX.ID], fs.airportResources.departureGate)
 
 		table.insert(upd, { '=', FLIGHT_IDX.DEP_GATE, fs.airportResources.departureGate })
 	end
 	if fs.airportResources.departureTerminal and
 	   fs.airportResources.departureTerminal ~= flight[FLIGHT_IDX.DEP_TERM] then
-		log.info("flight `%u': departureTerminal set to `%s'",
-			 flight[FLIGHT_IDX.ID], fs.airportResources.departureTerminal)
+		log.info("%s: flight `%u': departureTerminal set to `%s'",
+			 func, flight[FLIGHT_IDX.ID], fs.airportResources.departureTerminal)
 
 		table.insert(upd, { '=', FLIGHT_IDX.DEP_TERM, fs.airportResources.departureTerminal })
 	end
 
 	if #upd == 0 then
-		log.info("flight `%u': nothing to update (departure gate)", flight[FLIGHT_IDX.ID])
+		log.info("%s: flight `%u': nothing to update (departure gate)", func, flight[FLIGHT_IDX.ID])
 		return { status = 200 }
 	end
 
 	local ok, ret = pcall(flights.update, flights, flight[FLIGHT_IDX.ID], upd)
 	if not ok then
-		log.error("flight `%u', update failed: %s", flight[FLIGHT_IDX.ID], ret)
+		log.error("%s: flight `%u', update failed: %s", func, flight[FLIGHT_IDX.ID], ret)
 		return { status = 400 }
 	end
 
-	log.info("flight `%u': update success", flight[FLIGHT_IDX.ID])
+	log.info("%s: flight `%u': update success", func, flight[FLIGHT_IDX.ID])
 
 	return { status = 200 }
 end
 
 local function flyd_process_update_delay(flight, rule, fs)
-	local departure_date = rule.departure or (fs.departureDate and fs.departureDate.dateLocal)
+	local func = 'flyd_process_update_delay'
 
+	local departure_date = rule.departure or (fs.departureDate and fs.departureDate.dateLocal)
 	if not departure_date then
-		log.error("flight `%u': got departure delay update, but new departure date not found",
-			  flight[FLIGHT_IDX.ID])
+		log.error("%s: flight `%u': got departure delay update, but new departure date not found",
+			  func, flight[FLIGHT_IDX.ID])
 
 		return { status = 400 }
 	end
 
 	if flight[FLIGHT_IDX.DEP_DATE] == departure_date then
-		log.info("flight `%u': nothing to update (delay)", flight[FLIGHT_IDX.ID])
+		log.info("%s: flight `%u': nothing to update (delay)", func, flight[FLIGHT_IDX.ID])
 		return { status = 200 }
 	end
 
 	local year, month, day = string.match(departure_date, "^(%d+)-(%d+)-(%d+)")
 	if not year then
-		log.error("flight `%u': can't parse date `%s'", flight[FLIGHT_IDX.ID], departure_date)
+		log.error("%s: flight `%u': can't parse date `%s'", func, flight[FLIGHT_IDX.ID], departure_date)
 		return { status = 400 }
 	end
 
@@ -306,8 +313,9 @@ local function flyd_process_update_delay(flight, rule, fs)
 		tonumber(day), tonumber(month), tonumber(year), FLYD_STATUS.DONE, flight[FLIGHT_IDX.ID]
 	})
 	if not ok then
-		log.error("insert {%s,%s,%s,%s,%s} for `%u' failed: %s",
-			  flight[FLIGHT_IDX.CARRIER], flight[FLIGHT_IDX.FLIGHT], day, month, year, flight[FLIGHT_IDX.ID], ret)
+		log.error("%s: insert {%s,%s,%s,%s,%s} for `%u' failed: %s",
+			  func, flight[FLIGHT_IDX.CARRIER], flight[FLIGHT_IDX.FLIGHT],
+			  day, month, year, flight[FLIGHT_IDX.ID], ret)
 
 		return { status = 200 }
 	end
@@ -316,24 +324,26 @@ local function flyd_process_update_delay(flight, rule, fs)
 end
 
 local function flyd_validate_alert_json(json)
+	local func = 'flyd_validate_alert_json'
+
 	if not json.alert then
-		log.error("got invalid json inside callback: missed `alert' field")
+		log.error("%s: got invalid json inside callback: missed `alert' field", func)
 		return false
 	elseif not json.alert.event then
-		log.error("got invalid json inside callback: missed `alert.event' field")
+		log.error("%s: got invalid json inside callback: missed `alert.event' field", func)
 		return false
 	elseif not json.alert.rule then
-		log.error("got invalid json inside callback: missed `alert.rule' field")
+		log.error("%s: got invalid json inside callback: missed `alert.rule' field", func)
 		return false
 	elseif not json.alert.flightStatus then
-		log.error("got invalid json inside callback: missed `alert.flightStatus' field")
+		log.error("%s: got invalid json inside callback: missed `alert.flightStatus' field", func)
 		return false
 	end
 
 	local t = json.alert.event.type
 	if t ~= 'CANCELLED' and t ~= 'DIVERTED' and t ~= 'DEPARTURE_DELAY' and
 	   t ~= 'DEPARTURE_GATE' and t ~= 'ARRIVAL_GATE' then
-		log.error("got unknown notify event type: `%s'", t)
+		log.error("%s: got unknown notify event type: `%s'", func, t)
 		return false
 	end
 
@@ -341,6 +351,8 @@ local function flyd_validate_alert_json(json)
 end
 
 local function flyd_process_update(flight, json)
+	local func = 'flyd_process_update'
+
 	if not flyd_validate_alert_json(json) then
 		return { status = 400 }
 	end
@@ -350,18 +362,18 @@ local function flyd_process_update(flight, json)
 	local fs = json.alert.flightStatus
 
 	if fs.flightNumber ~= flight[FLIGHT_IDX.FLIGHT] then
-		log.error("broken callback: got flightNumber `%s', but expected: `%u'",
-			  fs.flightNumber, flight[FLIGHT_IDX.FLIGHT])
+		log.error("%s: broken callback: got flightNumber `%s', but expected: `%u'",
+			  func, fs.flightNumber, flight[FLIGHT_IDX.FLIGHT])
 
 		return { status = 400 }
 	end
 
 	if flight[FLIGHT_IDX.STATUS] == RESERVATION_STATUS.CANCELLED then
-		log.warn("got notify for cancelled flight, skip it")
+		log.warn("%s: got notify for cancelled flight, skip it", func)
 		return { status = 200 }
 	end
 
-	log.debug("got `%s' notify for `%u' flight", t, flight[FLIGHT_IDX.FLIGHT])
+	log.info("%s: got `%s' notify for `%u' flight", func, t, flight[FLIGHT_IDX.FLIGHT])
 
 	if t == 'CANCELLED' then
 		return flyd_process_update_cancelled(flight)
@@ -379,25 +391,27 @@ local function flyd_process_update(flight, json)
 end
 
 local function flyd_new_notify_cb(req)
+	local func = 'flyd_new_notify_cb'
+
 	local key = req:stash('key')
 	assert(key ~= nil)
 
 	if req.method ~= 'POST' then
-		log.error("got invalid request (method: `%s', key: `%s')", req.method, key)
+		log.error("%s: got invalid request (method: `%s', key: `%s')", func, req.method, key)
 		return { status = 405 } -- method not allowed
 	end
 
 	local ok, json = pcall(req.json, req)
 	if not ok then
-		log.error("can't decode json: %s", json)
+		log.error("%s: can't decode json: %s", func, json)
 		return { status = 400 }
 	end
 
-	log.debug("got notify: %s", tostring(req))
+	log.debug("%s: got notify: %s", func, tostring(req))
 
 	local record = callbacks:get{ key }
 	if not record then
-		log.error("callback with key `%s' not found", key)
+		log.error("%s: callback with key `%s' not found", func, key)
 		return { status = 403 } -- forbidden
 	end
 
@@ -408,37 +422,39 @@ local function flyd_new_notify_cb(req)
 end
 
 local function flyd_get(req, locale)
+	local func = 'flyd_get'
+
 	if #req ~= 6 then
-		log.error("expected 6 arguments, but got: %d", #req)
+		log.error("%s: expected 6 arguments, but got: %d", func, #req)
 		return nil
 	end
 
 	local reservation_id = table.remove(req, 1)
 	if locale ~= LOCALE.RU and locale ~= LOCALE.EN then
-		log.error("Unknown locale: `%s'", locale)
+		log.error("%s: unknown locale: `%s'", func, locale)
 		return nil
 	end
 
 	local ok, correspond_req = pcall(query.get, query, req)
 	if not ok then
-		log.warn("query:get{%s, %s, %s, %s, %s} failed: %s", tostring(req[1]), tostring(req[2]),
+		log.warn("%s: query:get{%s, %s, %s, %s, %s} failed: %s", func, tostring(req[1]), tostring(req[2]),
 			 tostring(req[3]), tostring(req[4]), tostring(req[5]), correspond_req)
 		return nil
 	elseif not correspond_req then
-		log.warn("query:get{%s, %u, %u, %u, %u}: query not found", unpack(req))
+		log.warn("%s: query:get{%s, %u, %u, %u, %u}: query not found", func, unpack(req))
 		return nil
 	elseif correspond_req[QUERY_IDX.STATUS] == FLYD_STATUS.ACTIVE then
-		log.warn("query:get{%s, %u, %u, %u, %u}: query is in progress", unpack(req))
+		log.warn("%s: query:get{%s, %u, %u, %u, %u}: query is in progress", func, unpack(req))
 		return nil
 	elseif correspond_req[QUERY_IDX.STATUS] == FLYD_STATUS.ERROR then
-		log.warn("query:get{%s, %u, %u, %u, %u}: provider hasn't info for this flight", unpack(req))
+		log.warn("%s: query:get{%s, %u, %u, %u, %u}: provider hasn't info for this flight", func, unpack(req))
 		return nil
 	end
 
 	local carrier, flight, day, month, year = unpack(req)
 	if correspond_req[QUERY_IDX.STATUS] == FLYD_STATUS.NEED_CB then
-		log.warn("query:get{%s, %u, %u, %u, %u}: callbacks not set yet (old data is possible)",
-			 carrier, flight, day, month, year)
+		log.warn("%s: query:get{%s, %u, %u, %u, %u}: callbacks not set yet (old data is possible)",
+			 func, carrier, flight, day, month, year)
 	end
 
 	assert(correspond_req[QUERY_IDX.ID] ~= nil, 'id should be not nil here')
@@ -454,7 +470,7 @@ local function flyd_get(req, locale)
 		end
 
 		if not departure_city then
-			log.warn("Can't find city for `%s' code", record[FLIGHT_IDX.DEP_CODE])
+			log.warn("%s: can't find city for `%s' code", func, record[FLIGHT_IDX.DEP_CODE])
 		end
 	end
 
@@ -467,7 +483,7 @@ local function flyd_get(req, locale)
 		end
 
 		if not arrival_city then
-			log.warn("Can't find city for `%s' code", record[FLIGHT_IDX.ARR_CODE])
+			log.warn("%s: can't find city for `%s' code", func, record[FLIGHT_IDX.ARR_CODE])
 		end
 	end
 
@@ -476,7 +492,7 @@ local function flyd_get(req, locale)
 		provider_name = dictionary.iata2carrier_info[record[FLIGHT_IDX.CARRIER]]
 
 		if not provider_name then
-			log.warn("Can't find provider name for `%s' code", record[FLIGHT_IDX.CARRIER])
+			log.warn("%s: can't find provider name for `%s' code", func, record[FLIGHT_IDX.CARRIER])
 		end
 	end
 
@@ -560,24 +576,25 @@ local function gamma_generate_url(url, ip)
 end
 
 local function flyd_proxy_single_request(base_url, addr)
+	local func = 'flyd_proxy_single_request'
 	local url
 
-	if not use_gamma_url then
+	if not config.use_gamma_url then
 		url = string.format("http://%s/%s", addr, base_url)
 	else
 		base_url = string.format("%s&appKey=%s&appId=%s", base_url, config.app_key, config.app_id)
 		url = gamma_generate_url(base_url, addr)
 	end
 
-	log.debug("try `%s/%s'", addr, base_url, url)
+	log.debug("%s: try `%s/%s'", func, addr, base_url, url)
 
 	local resp = client.get(url)
 	if resp.status == 200 then
 		return resp
 	end
 
-	log.error("http response for `%s': got status `%d' instead of `200'",
-		  url, resp.status)
+	log.error("%s: http response for `%s': got status `%d' instead of `200'",
+		  func, url, resp.status)
 
 	return nil
 end
@@ -615,11 +632,12 @@ local function urlencode(str)
 end
 
 local function flyd_prepare_callback(flight)
+	local func = 'flyd_prepare_callback'
 	local uid = uuid.str()
 
 	local ok, ret = pcall(callbacks.insert, callbacks, { uid, flight[FLIGHT_IDX.ID] })
 	if not ok then
-		log.error("can't insert callback info: %s", ret)
+		log.error("%s: can't insert callback info: %s", func, ret)
 		return nil
 	end
 
@@ -627,6 +645,8 @@ local function flyd_prepare_callback(flight)
 end
 
 local function flyd_register_callbacks(id, flight, addr)
+	local func = 'flyd_register_callbacks'
+
 	if not flight then
 		flight = flights:get(id)
 		assert(flight ~= nil, 'flight should exist here')
@@ -635,7 +655,7 @@ local function flyd_register_callbacks(id, flight, addr)
 	local date = flight[FLIGHT_IDX.DEP_DATE];
 	local year, month, day = string.match(date, "^(%d+)-(%d+)-(%d+)")
 	if not year then
-		log.error("can't parse date `%s'", date)
+		log.error("%s: can't parse date `%s'", func, date)
 		return true -- to remove from queue
 	end
 	assert(year ~= nil and month ~= nil and day ~= nil)
@@ -662,49 +682,51 @@ local function flyd_register_callbacks(id, flight, addr)
 
 	local ok, json = pcall(json.decode, resp.body)
 	if not ok then
-		log.error("Can't decode (callbacks): `%s'", json)
+		log.error("%s: can't decode (callbacks): `%s'", func, json)
 		callbacks:delete(uid)
 
 		return true -- to remove from queue
 	end
 
 	if json.error then
-		log.error("got error `%u': %s", json.error.httpStatusCode, json.error.errorMessage)
+		log.error("%s: got error `%u': %s", func, json.error.httpStatusCode, json.error.errorMessage)
 		callbacks:delete(uid)
 
 		return true
 	end
 
-	log.debug("Got json response: `%s'", resp.body)
+	log.debug("%s: got json response: `%s'", func, resp.body)
 
 	local key = { flight[FLIGHT_IDX.CARRIER], tonumber(flight[FLIGHT_IDX.FLIGHT]),
 		      tonumber(day), tonumber(month), tonumber(year) }
 	local upd = query:update(key, {{'=', QUERY_IDX.STATUS, FLYD_STATUS.DONE}})
 	assert(upd, 'update should be successfull')
 
-	log.info("flight {%s,%u,%u,%u,%u}: processed", unpack(key))
+	log.info("%s: flight {%s,%u,%u,%u,%u}: processed", func, unpack(key))
 
 	return true
 end
 
 local function flyd_prepare_flight_record(id, fs)
+	local func = 'flyd_prepare_flight_record'
+
 	if not fs.carrierFsCode then
-		log.error("flight `%u': invalid response: missed `carrierFsCode'", id)
+		log.error("%s: flight `%u': invalid response: missed `carrierFsCode'", func, id)
 		return nil
 	elseif not fs.flightNumber then
-		log.error("flight `%u': invalid response: missed `flightNumber'", id)
+		log.error("%s: flight `%u': invalid response: missed `flightNumber'", func, id)
 		return nil
 	elseif not fs.departureAirportFsCode then
-		log.error("flight `%u': invalid response: missed `departureAirportFsCode'", id)
+		log.error("%s: flight `%u': invalid response: missed `departureAirportFsCode'", func, id)
 		return nil
 	elseif not fs.arrivalAirportFsCode then
-		log.error("flight `%u': invalid response: missed `arrivalAirportFsCode'", id)
+		log.error("%s: flight `%u': invalid response: missed `arrivalAirportFsCode'", func, id)
 		return nil
 	elseif not fs.departureDate or not fs.departureDate.dateLocal then
-		log.error("flight `%u': invalid response: missed `departureDate'", id)
+		log.error("%s: flight `%u': invalid response: missed `departureDate'", func, id)
 		return nil
 	elseif not fs.arrivalDate or not fs.arrivalDate.dateLocal then
-		log.error("flight `%u': invalid response: missed `arrivalDate'", id)
+		log.error("%s: flight `%u': invalid response: missed `arrivalDate'", func, id)
 		return nil
 	end
 
@@ -729,9 +751,11 @@ local function flyd_prepare_flight_record(id, fs)
 end
 
 local function flyd_process_response(req, resp, addr)
+	local func = 'flyd_process_response'
+
 	local ok, json = pcall(json.decode, resp.body)
 	if not ok then
-		log.error("Can't decode: `%s'", json)
+		log.error("%s: can't decode: `%s'", func, json)
 		return true -- to remove from queue
 	end
 
@@ -742,19 +766,19 @@ local function flyd_process_response(req, resp, addr)
 		local upd = query:update(key, {{'=', QUERY_IDX.STATUS, FLYD_STATUS.ERROR}})
 		assert(upd, 'update should be successfull')
 
-		log.error("got error `%u': %s", json.error.httpStatusCode, json.error.errorMessage)
+		log.error("%s: got error `%u': %s", func, json.error.httpStatusCode, json.error.errorMessage)
 
 		return true
 	end
 
-	log.debug("Got json response: `%s'", resp.body)
+	log.debug("%s: got json response: `%s'", func, resp.body)
 	if not json.flightStatuses or type(json.flightStatuses) ~= 'table' then
-		log.error("got invalid json: `flightStatuses' is not table")
+		log.error("%s: got invalid json: `flightStatuses' is not table", func)
 		return true
 	end
 
 	if #json.flightStatuses > 1 then
-		log.warn("received more then one flight status, take only the first one")
+		log.warn("%s: received more then one flight status, take only the first one", func)
 	end
 
 	local rec2ins = flyd_prepare_flight_record(req[QUERY_IDX.FLIGHT], json.flightStatuses[1])
@@ -767,14 +791,14 @@ local function flyd_process_response(req, resp, addr)
 
 	local ok, new = pcall(flights.auto_increment, flights, rec2ins)
 	if not ok then
-		log.error("Can't insert flight info: %s", new)
+		log.error("%s: can't insert flight info: %s", func, new)
 		return true
 	end
 
 	local upd = query:update(key, {{'=', QUERY_IDX.STATUS, FLYD_STATUS.NEED_CB}, {'!', -1, new[1]}})
 	assert(upd, 'update should be successfull')
 
-	log.debug("flight {%s,%u,%u,%u,%u}: has been stored", unpack(key))
+	log.debug("%s: flight {%s,%u,%u,%u,%u}: has been stored", func, unpack(key))
 
 	return flyd_register_callbacks(new[1], new, addr)
 end
@@ -797,29 +821,31 @@ local function flyd_request_do(req)
 end
 
 local function flyd_process_request(req)
+	local func = 'flyd_process_request'
+
 	-- expect arguments: carrier, flight, day, month, year
 	if #req ~= 5 then
-		log.error("invalid request: expected 5 argumets, but got: `%u'", #req)
+		log.error("%s: invalid request: expected 5 argumets, but got: `%u'", func, #req)
 		return true -- to remove from queue
 	end
 
 	local ok, record = pcall(query.get, query, req)
 	if not ok then
-		log.error("invalid request: select failed: %s", record)
+		log.error("%s: invalid request: select failed: %s", func, record)
 		return true
 	elseif record ~= nil then
 		local status = record[QUERY_IDX.STATUS]
 
 		if status == FLYD_STATUS.DONE or status == FLYD_STATUS.ERROR then
-			log.debug("request {%s,%u,%u,%u,%u} already processed", unpack(req))
+			log.debug("%s: request {%s,%u,%u,%u,%u} already processed", func, unpack(req))
 			return true
 		elseif status == FLYD_STATUS.ACTIVE then
-			log.debug("request {%s,%u,%u,%u,%u}: retry all", unpack(req))
+			log.debug("%s: request {%s,%u,%u,%u,%u}: retry all", func, unpack(req))
 			return flyd_request_do(record)
 		end
 
 		assert(status == FLYD_STATUS.NEED_CB)
-		log.debug("request {%s,%u,%u,%u,%u}: retry register callbacks", unpack(req))
+		log.debug("%s: request {%s,%u,%u,%u,%u}: retry register callbacks", func, unpack(req))
 
 		return flyd_register_callbacks(record[QUERY_IDX.ID])
 	end
@@ -827,9 +853,11 @@ local function flyd_process_request(req)
 	table.insert(req, FLYD_STATUS.ACTIVE)
 	local ok, descr = pcall(query.insert, query, req)
 	if not ok then
-		log.error("Can't insert query: %s", descr)
+		log.error("%s: can't insert query: %s", func, descr)
 		return true -- invalid request, remove from queue
 	end
+
+	log.warn("%s: make new request {%s,%u,%u,%u,%u}", func, unpack(req))
 
 	return flyd_request_do(descr)
 end
@@ -918,7 +946,7 @@ fiber.create(function ()
 		local id, data = task[1], task[3]
 		if flyd_process_request(data) then
 			queue.tube.requests:ack(id)
-			log.info("Task `%d' complete", id)
+			log.info("Task `%d' completed", id)
 		else
 			queue.tube.requests:release(id, { delay = config.retry_timeout })
 			log.warn("Task `%d' failed, delay it", id)
@@ -943,15 +971,17 @@ end)
 
 -- Return value: table with jsonld for each request
 function flyd_get_flight_info_json(list, locale)
+	local func = 'flyd_get_flight_info_json'
+
 	if type(list) ~= 'table' then
-		log.error('Invalid argument (get): table expected, got: %s', type(list))
+		log.error('%s: invalid argument: table expected, got: %s', func, type(list))
 		return { json.encode(nil) }
 	end
 
 	local resp = {}
 	for i = 1, #list do
 		if type(list[i]) ~= 'table' then
-			log.error("Invalid element (get) `%d': table expected, got: %s", i, type(list[i]))
+			log.error("%s: invalid element `%d': table expected, got: %s", func, i, type(list[i]))
 			table.insert(resp, json.encode(nil))
 		else
 			local ret = flyd_get(list[i], locale)
@@ -972,17 +1002,19 @@ end
 
 -- Return value: false - if all is wrong, true - otherwise
 function flyd_new_flight(list)
+	local func = 'flyd_new_flight'
+
 	if type(list) ~= 'table' then
-		log.error('Invalid argument (put): table expected, got: %s', type(list))
+		log.error('%s: invalid argument: table expected, got: %s', func, type(list))
 		return false
 	end
 
 	for i = 1, #list do
 		if type(list[i]) ~= 'table' then
-			log.error("Invalid element (put) `%d': table expected, got: %s", i, type(list[i]))
+			log.error("%s: invalid element `%d': table expected, got: %s", func, i, type(list[i]))
 		else
 			local task = queue.tube.requests:put(list[i])
-			log.info("append task: `%d'", task[1])
+			log.debug("append task: `%d'", task[1])
 		end
 	end
 
