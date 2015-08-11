@@ -424,17 +424,9 @@ end
 local function flyd_get(req, locale)
 	local func = 'flyd_get'
 
-	if #req ~= 6 then
-		log.error("%s: expected 6 arguments, but got: %d", func, #req)
-		return nil
-	end
+	assert(#req == 6, 'this function take 6 args')
 
 	local reservation_id = table.remove(req, 1)
-	if locale ~= LOCALE.RU and locale ~= LOCALE.EN then
-		log.error("%s: unknown locale: `%s'", func, locale)
-		return nil
-	end
-
 	local ok, correspond_req = pcall(query.get, query, req)
 	if not ok then
 		log.warn("%s: query:get{%s, %s, %s, %s, %s} failed: %s", func, tostring(req[1]), tostring(req[2]),
@@ -823,6 +815,10 @@ end
 local function flyd_process_request(req)
 	local func = 'flyd_process_request'
 
+	-- XXX: remove unneede `reservation_id'
+	-- (do it here just to simplify clients code)
+	table.remove(req, 1)
+
 	-- expect arguments: carrier, flight, day, month, year
 	if #req ~= 5 then
 		log.error("%s: invalid request: expected 5 argumets, but got: `%u'", func, #req)
@@ -860,6 +856,28 @@ local function flyd_process_request(req)
 	log.warn("%s: make new request {%s,%u,%u,%u,%u}", func, unpack(req))
 
 	return flyd_request_do(descr)
+end
+
+-- reservation_id, carrier, flight, day, month, year
+local function flyd_parse_request(request)
+	local func = 'flyd_parse_request'
+	local ok
+
+	if (type(request) ~= 'string') then
+		log.error("%s: invalid argument: expected string, but got `%s'", func, type(request))
+		return false
+	end
+
+	local rid, carrier, flight, day, month, year = string.match(request, "([^|]+)|([^|]+)|(%d+)|(%d+)|(%d+)|(%d+)")
+	if not year then
+		log.error("%s: can't parse request: `%s'", func, request)
+		return false
+	end
+
+	-- next `tonumber' functions should be ok, because of `string.match'
+	flight, day, month, year = tonumber(flight), tonumber(day), tonumber(month), tonumber(year)
+
+	return true, {rid, carrier, flight, day, month, year}
 end
 
 ---------------------------------------
@@ -960,63 +978,68 @@ end)
 ---------------------------------------
 
 -- Arguments:
---	`list' is a table of tables with keys:
---		`rid'   - reservation id
---		`num'   - flight number
---		`code'  - provider iata code
---		`day'   - departure day
---		`month' - departure month
---		`year'  - departure year
+--	`list' is a table of strings in the following format:
+--		`reservation_id|iata_code|flight_number|day|month|year' (`|' is a delimiter)
 --	`locale' - which locale use for response (ru, en) - affect on city name
 
--- Return value: table with jsonld for each request
+-- Return value:
+--	table of pairs: { key, value(string or false) } for each key from request
+--		or `false' in case bad request
+
 function flyd_get_flight_info_json(list, locale)
 	local func = 'flyd_get_flight_info_json'
-
-	if type(list) ~= 'table' then
-		log.error('%s: invalid argument: table expected, got: %s', func, type(list))
-		return { json.encode(nil) }
-	end
-
-	local resp = {}
-	for i = 1, #list do
-		if type(list[i]) ~= 'table' then
-			log.error("%s: invalid element `%d': table expected, got: %s", func, i, type(list[i]))
-			table.insert(resp, json.encode(nil))
-		else
-			local ret = flyd_get(list[i], locale)
-			table.insert(resp, json.encode(ret))
-		end
-	end
-
-	return resp
-end
-
--- Arguments:
---	`list' is a table of tables with keys:
---		`num'   - flight number
---		`code'  - provider iata code
---		`day'   - departure day
---		`month' - departure month
---		`year'  - departure year
-
--- Return value: false - if all is wrong, true - otherwise
-function flyd_new_flight(list)
-	local func = 'flyd_new_flight'
 
 	if type(list) ~= 'table' then
 		log.error('%s: invalid argument: table expected, got: %s', func, type(list))
 		return false
 	end
 
-	for i = 1, #list do
-		if type(list[i]) ~= 'table' then
-			log.error("%s: invalid element `%d': table expected, got: %s", func, i, type(list[i]))
-		else
-			local task = queue.tube.requests:put(list[i])
-			log.debug("append task: `%d'", task[1])
-		end
+	if locale ~= LOCALE.RU and locale ~= LOCALE.EN then
+		log.error("%s: unknown locale: `%s'", func, locale)
+		return false
 	end
 
-	return true
+	local resp = {}
+	for i = 1, #list do
+		local result = false
+
+		local ok, tuple = flyd_parse_request(list[i])
+		if ok then
+			result = json.encode(flyd_get(tuple, locale))
+		end
+
+		table.insert(resp, { list[i], result })
+	end
+
+	return resp
+end
+
+-- Arguments:
+--	string in following format: `req1 req2 ... reqN'
+--	where `reqI' is: `reservation_id|iata_code|flight_number|day|month|year'
+--		(`|' is a delimiter)
+
+-- Return value:
+--	`nil' in case bad request or
+--	table of booleans (`true' - valid request, `false' - otherwise)
+function flyd_new_flight(request)
+	local func = 'flyd_new_flight'
+
+	if type(request) ~= 'string' then
+		log.error('%s: invalid argument: string expected, got: %s', func, type(list))
+		return false
+	end
+
+	local resp = {}
+	for req in string.gmatch(request, '%S+') do
+		local ok, tuple = flyd_parse_request(req)
+		if ok then
+			local task = queue.tube.requests:put(tuple)
+			log.debug("%s: append task: `%d'", func, task[1])
+		end
+
+		table.insert(resp, ok)
+	end
+
+	return resp
 end
