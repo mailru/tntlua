@@ -26,9 +26,21 @@ local function mysplit(inputstr, sep)
         return t
 end
 
-local function find_second_level_domain(mask)
-    local splited = mysplit(mask, '@')
-    local email_domain_part = splited[#splited]
+local function find_third_level_domain(email_domain_part)
+    local domain_parts = mysplit(email_domain_part, '.')
+    if #domain_parts == 0 then
+        error('In mask ' .. mask .. ' no domain found')
+    end
+    if #domain_parts == 1 then
+        error('In mask ' .. mask .. ' only first level domain found')
+    end
+    if #domain_parts == 2 then
+        error('In mask ' .. mask .. ' only second level domain found')
+    end
+    return domain_parts[#domain_parts - 2] .. '.' .. domain_parts[#domain_parts - 1] .. '.' .. domain_parts[#domain_parts]
+end
+
+local function find_second_level_domain(email_domain_part)
     local domain_parts = mysplit(email_domain_part, '.')
     if #domain_parts == 0 then
         error('In mask ' .. mask .. ' no domain found')
@@ -39,8 +51,31 @@ local function find_second_level_domain(mask)
     return domain_parts[#domain_parts - 1] .. '.' .. domain_parts[#domain_parts]
 end
 
+function string.ends(str, end_of_str)
+   return end_of_str=='' or string.sub(str, -string.len(end_of_string)) == end_of_string
+end
+
+local function need_third_level(domain)
+    local third_level_domains = {box.select(2, 0)}
+    for _, i in pairs(third_level_domains) do
+        if string.ends(domain, "." .. i[0]) then
+            return true
+        end
+    end
+    return false
+end
+
 function selist2_add_sender(mask, name_ru, name_en, cat)
-    return box.auto_increment_uniq(0, mask, name_ru, name_en, box.unpack('i', cat), find_second_level_domain(mask)):transform(5,1)
+    local splited = mysplit(mask, '@')
+    local email_domain_part = splited[#splited]
+
+    local domain_to_store = ""
+    if need_third_level(email_domain_part) then
+        domain_to_store = find_third_level_domain(email_domain_part)
+    else
+        domain_to_store = find_second_level_domain(email_domain_part)
+    end
+    return box.auto_increment_uniq(0, mask, name_ru, name_en, box.unpack('i', cat), domain_to_store):transform(5,1)
 end
 
 function get_sender_list_by_offset(offset, limit)
@@ -77,8 +112,14 @@ function selist2_search_by_mask(mask)
 end
 
 function selist2_search_by_domain(domain)
+    local domain_to_find = ""
+    if need_third_level(domain) then
+        domain_to_find = find_third_level_domain(domain)
+    else
+        domain_to_find = find_second_level_domain(domain)
+    end
     local ret = { }
-    local orig = {box.select(0, 2, domain)}
+    local orig = {box.select(0, 2, domain_to_find)}
     for _, tuple in pairs(orig) do
         table.insert(ret, tuple:transform(5, 1))
     end
@@ -87,4 +128,8 @@ end
 
 function selist2_get_exceptions()
     return box.select(1, 0)
+end
+
+function selist2_get_thirdlevel_domains()
+    return box.select(2, 0)
 end
