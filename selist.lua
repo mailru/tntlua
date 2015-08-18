@@ -84,3 +84,7 @@ function selist2_search_by_domain(domain)
     end
     return unpack(ret)
 end
+
+function selist2_get_exceptions()
+    return box.select(1, 0)
+end
