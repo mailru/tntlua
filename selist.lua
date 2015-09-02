@@ -52,7 +52,7 @@ local function find_second_level_domain(email_domain_part)
 end
 
 function string.ends(str, end_of_str)
-   return end_of_str=='' or string.sub(str, -string.len(end_of_string)) == end_of_string
+   return end_of_str=='' or string.sub(str, -string.len(end_of_str)) == end_of_str
 end
 
 local function need_third_level(domain)
