@@ -133,3 +133,53 @@ end
 function selist2_get_thirdlevel_domains()
     return box.select(2, 0)
 end
+
+function selist2_get_top_domains(offset, limit, filter_cat, sort_by_domain, sort_reverse)
+    offset = box.unpack('i', offset)
+
+    limit = box.unpack('i', limit)
+
+    filter_cat = box.unpack('i', filter_cat)
+    filter_cat = filter_cat ~= 0xFFFFFFFF and filter_cat or nil
+
+    sort_by_domain = box.unpack('i', sort_by_domain) ~= 0
+    sort_reverse = box.unpack('i', sort_reverse) ~= 0
+
+    local index = box.space[0].index[2]
+
+    local count = {}
+    local tuple
+    for tuple in index:iterator() do
+        if not filter_cat or filter_cat == box.unpack('i', tuple[4]) then
+            count[tuple[5]] = (count[tuple[5]] or 0) + 1
+        end
+    end
+
+    local ret = {}
+    for k, v in pairs(count) do
+        table.insert(ret, box.tuple.new({ k, v }))
+    end
+
+    if sort_by_domain then
+        if sort_reverse then
+            table.sort(ret, function(a, b) return a[0] > b[0] end)
+        else
+            table.sort(ret, function(a, b) return a[0] < b[0] end)
+        end
+    else
+        if sort_reverse then
+            table.sort(ret, function(a, b) return a[1] < b[1] end)
+        else
+            table.sort(ret, function(a, b) return a[1] > b[1] end)
+        end
+    end
+
+    if offset >= #ret then
+        return
+            box.tuple.new({ #ret, offset, limit })
+    end
+
+    return
+        box.tuple.new({ #ret, offset, limit }),
+        unpack(ret, offset + 1, math.min(#ret, offset + limit))
+end
