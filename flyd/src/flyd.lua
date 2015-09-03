@@ -984,19 +984,19 @@ end)
 
 -- Return value:
 --	table of pairs: { key, value(string or false) } for each key from request
---		or `false' in case bad request
+--		or empty table in case bad request
 
 function flyd_get_flight_info_json(locale, list)
 	local func = 'flyd_get_flight_info_json'
 
 	if type(list) ~= 'table' then
 		log.error('%s: invalid argument: table expected, got: %s', func, type(list))
-		return false
+		return {}
 	end
 
 	if locale ~= LOCALE.RU and locale ~= LOCALE.EN then
 		log.error("%s: unknown locale: `%s'", func, locale)
-		return false
+		return {}
 	end
 
 	local resp = {}
@@ -1020,14 +1020,14 @@ end
 --		(`|' is a delimiter)
 
 -- Return value:
---	`nil' in case bad request or
+--	empty table in case bad request or
 --	table of booleans (`true' - valid request, `false' - otherwise)
 function flyd_new_flight(request)
 	local func = 'flyd_new_flight'
 
 	if type(request) ~= 'string' then
 		log.error('%s: invalid argument: string expected, got: %s', func, type(list))
-		return false
+		return {}
 	end
 
 	local resp = {}
