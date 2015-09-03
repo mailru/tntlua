@@ -986,11 +986,12 @@ end)
 --	table of pairs: { key, value(string or false) } for each key from request
 --		or empty table in case bad request
 
-function flyd_get_flight_info_json(locale, list)
+function flyd_get_flight_info_json(locale, ...)
 	local func = 'flyd_get_flight_info_json'
+	list = {...}
 
-	if type(list) ~= 'table' then
-		log.error('%s: invalid argument: table expected, got: %s', func, type(list))
+	if #list == 0 then
+		log.error('%s: invalid argument count (at least two required)', func, type(list))
 		return {}
 	end
 

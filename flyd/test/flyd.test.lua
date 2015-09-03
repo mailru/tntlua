@@ -105,6 +105,10 @@ local function deinitialize_test(conn)
 end
 
 local function flyd_get(conn, t, loc)
+	if type(t) == 'table' then
+		return conn:call('flyd_get_flight_info_json', loc, unpack(t))
+	end
+
 	return conn:call('flyd_get_flight_info_json', loc, t)
 end
 
@@ -154,12 +158,11 @@ test:test('flyd.put.get', function(test)
 	end)
 
 	test:test('flyd.get - arguments', function(test)
-		test:plan(7)
+		test:plan(6)
 
 		local ret = flyd_get(conn, 'non table', 'ru')
 		test:istable(ret, 'ret is table')
 		test:istable(ret[1], 'ret[1] is table')
-		test:isnil(ret[1][1], 'ret[1][1] is nil')
 
 		ret = flyd_get(conn, { '1|2|3|4|5|6' }, 'us')
 		test:isnil(ret[1][1], 'invalid locale')
