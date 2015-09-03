@@ -978,15 +978,15 @@ end)
 ---------------------------------------
 
 -- Arguments:
+--	`locale' - which locale use for response (ru, en) - affect on city name
 --	`list' is a table of strings in the following format:
 --		`reservation_id|iata_code|flight_number|day|month|year' (`|' is a delimiter)
---	`locale' - which locale use for response (ru, en) - affect on city name
 
 -- Return value:
 --	table of pairs: { key, value(string or false) } for each key from request
 --		or `false' in case bad request
 
-function flyd_get_flight_info_json(list, locale)
+function flyd_get_flight_info_json(locale, list)
 	local func = 'flyd_get_flight_info_json'
 
 	if type(list) ~= 'table' then

@@ -105,7 +105,7 @@ local function deinitialize_test(conn)
 end
 
 local function flyd_get(conn, t, loc)
-	return conn:call('flyd_get_flight_info_json', t, loc)
+	return conn:call('flyd_get_flight_info_json', loc, t)
 end
 
 local function flyd_put(conn, arg)
