@@ -134,6 +134,25 @@ function selist2_get_thirdlevel_domains()
     return box.select(2, 0)
 end
 
+function selist2_get_top_domains_count(filter_cat)
+    filter_cat = box.unpack('i', filter_cat)
+    filter_cat = filter_cat ~= 0xFFFFFFFF and filter_cat or nil
+
+    local count, uniq = 0, {}
+
+    local tuple
+    for tuple in box.space[0].index[0]:iterator() do
+        if not filter_cat or filter_cat == box.unpack('i', tuple[4]) then
+            if not uniq[tuple[5]] then
+                count = count + 1
+                uniq[tuple[5]] = 1
+            end
+        end
+    end
+
+    return count
+end
+
 function selist2_get_top_domains(offset, limit, filter_cat, sort_by_domain, sort_reverse)
     offset = box.unpack('i', offset)
 
@@ -145,11 +164,10 @@ function selist2_get_top_domains(offset, limit, filter_cat, sort_by_domain, sort
     sort_by_domain = box.unpack('i', sort_by_domain) ~= 0
     sort_reverse = box.unpack('i', sort_reverse) ~= 0
 
-    local index = box.space[0].index[2]
-
     local count = {}
+
     local tuple
-    for tuple in index:iterator() do
+    for tuple in box.space[0].index[0]:iterator() do
         if not filter_cat or filter_cat == box.unpack('i', tuple[4]) then
             count[tuple[5]] = (count[tuple[5]] or 0) + 1
         end
@@ -176,10 +194,7 @@ function selist2_get_top_domains(offset, limit, filter_cat, sort_by_domain, sort
 
     if offset >= #ret then
         return
-            box.tuple.new({ #ret, offset, limit })
     end
 
-    return
-        box.tuple.new({ #ret, offset, limit }),
-        unpack(ret, offset + 1, math.min(#ret, offset + limit))
+    return unpack(ret, offset + 1, math.min(#ret, offset + limit))
 end
