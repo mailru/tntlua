@@ -198,7 +198,7 @@ end
 function _selist2_get_senders(offset, limit, filter_cat, sort_order, sort_reverse)
     local ret_list = {}
 
-    local sort_index = { name = 1, domain = 2, name_ru = 4, name_en = 5, cat = 3 }
+    local sort_index = { name = 1, domain = 2, name_ru = 4, name_rus = 4, name_en = 5, name_eng = 5, cat = 3 }
     local index = sort_index[sort_order] or 0
 
     _selist2_iterate_tuples(filter_cat, index, function(tuple)
