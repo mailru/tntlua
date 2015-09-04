@@ -105,7 +105,11 @@ local function deinitialize_test(conn)
 end
 
 local function flyd_get(conn, t, loc)
-	return conn:call('flyd_get_flight_info_json', t, loc)
+	if type(t) == 'table' then
+		return conn:call('flyd_get_flight_info_json', loc, unpack(t))
+	end
+
+	return conn:call('flyd_get_flight_info_json', loc, t)
 end
 
 local function flyd_put(conn, arg)
@@ -135,7 +139,7 @@ test:test('flyd.put.get', function(test)
 		test:plan(6)
 
 		local ret = flyd_put(conn, {})
-		test:is(ret[1][1], false, 'put: non string arg')
+		test:isnil(ret[1][1], 'put: non string arg')
 
 		ret = flyd_put(conn, '')
 		test:isnil(ret[1][1], 'put: empty string arg')
@@ -154,15 +158,14 @@ test:test('flyd.put.get', function(test)
 	end)
 
 	test:test('flyd.get - arguments', function(test)
-		test:plan(7)
+		test:plan(6)
 
 		local ret = flyd_get(conn, 'non table', 'ru')
 		test:istable(ret, 'ret is table')
 		test:istable(ret[1], 'ret[1] is table')
-		test:is(ret[1][1], false, 'ret[1][1] is false')
 
 		ret = flyd_get(conn, { '1|2|3|4|5|6' }, 'us')
-		test:is(ret[1][1], false, 'invalid locale')
+		test:isnil(ret[1][1], 'invalid locale')
 
 		ret = flyd_get(conn, { '1|2|3|4' }, 'en')
 		test:is(ret[1][2], false, 'invalid args cnt')
@@ -200,7 +203,6 @@ test:test('flyd.put.get', function(test)
 		fiber.sleep(1)
 
 		ret = flyd_get(conn, { 'CODE|ZR|100|20|7|2015' }, 'en')
-		print(ret[1][2])
 		data = json.decode(ret[1][2])
 		test:isnil(data.reservationFor.provider.name, 'check (unknown) provider iata')
 		test:isnil(data.reservationFor.departureAirport.name, 'check departure airport (unknown)')
