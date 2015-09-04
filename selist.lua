@@ -1,3 +1,5 @@
+local DISABLE_SEARCH_BY_DOMAIN = false
+
 function box.auto_increment_uniq(spaceno, uniq, ...)
     local tuple = box.select(spaceno, 1, uniq)
 
@@ -111,7 +113,15 @@ function selist2_search_by_mask(mask)
     return unpack(ret)
 end
 
-function selist2_search_by_domain(domain)
+function selist2_search_by_domain(...)
+    if DISABLE_SEARCH_BY_DOMAIN then
+        return unpack({})
+    end
+
+    return _selist2_search_by_domain(...)
+end
+
+function _selist2_search_by_domain(domain)
     local domain_to_find = ""
     if need_third_level(domain) then
         domain_to_find = find_third_level_domain(domain)
@@ -134,67 +144,148 @@ function selist2_get_thirdlevel_domains()
     return box.select(2, 0)
 end
 
-function selist2_get_top_domains_count(filter_cat)
+-- maillistadmin only
+
+function selist2_get_senders_count(...)
+    return _selist2_get_senders_count(_selist2_parse_params_count(...))
+end
+
+function selist2_get_senders(...)
+    return _selist2_get_senders(_selist2_parse_params(...))
+end
+
+function selist2_get_top_domains_count(...)
+    return _selist2_get_top_domains_count(_selist2_parse_params_count(...))
+end
+
+function selist2_get_top_domains(...)
+    return _selist2_get_top_domains(_selist2_parse_params(...))
+end
+
+function _selist2_parse_params_count(filter_cat)
     filter_cat = box.unpack('i', filter_cat)
-    filter_cat = filter_cat ~= 0xFFFFFFFF and filter_cat or nil
+    filter_cat = filter_cat ~= 0xFFFFFFFF and filter_cat or false
 
-    local count, uniq = 0, {}
+    return filter_cat
+end
 
-    local tuple
-    for tuple in box.space[0].index[0]:iterator() do
-        if not filter_cat or filter_cat == box.unpack('i', tuple[4]) then
-            if not uniq[tuple[5]] then
-                count = count + 1
-                uniq[tuple[5]] = 1
-            end
-        end
+function _selist2_parse_params(offset, limit, filter_cat, sort_order, sort_reverse)
+    offset = box.unpack('i', offset)
+    limit = box.unpack('i', limit)
+
+    filter_cat = box.unpack('i', filter_cat)
+    filter_cat = filter_cat ~= 0xFFFFFFFF and filter_cat or false
+
+    sort_reverse = box.unpack('i', sort_reverse) ~= 0
+
+    return offset, limit, filter_cat, sort_order, sort_reverse
+end
+
+function _selist2_get_senders_count(filter_cat)
+    local count = 0
+
+    if filter_cat then
+        count = box.space[0].index[3]:count(filter_cat)
+    else
+        _selist2_iterate_tuples(false, function(tuple)
+            count = count + 1
+        end)
     end
 
     return count
 end
 
-function selist2_get_top_domains(offset, limit, filter_cat, sort_by_domain, sort_reverse)
-    offset = box.unpack('i', offset)
+function _selist2_get_senders(offset, limit, filter_cat, sort_order, sort_reverse)
+    local ret_list = {}
 
-    limit = box.unpack('i', limit)
+    local sort_index = { name = 1, domain = 2, name_ru = 4, name_rus = 4, name_en = 5, name_eng = 5, cat = 3 }
+    local index = sort_index[sort_order] or 0
 
-    filter_cat = box.unpack('i', filter_cat)
-    filter_cat = filter_cat ~= 0xFFFFFFFF and filter_cat or nil
+    _selist2_iterate_tuples(filter_cat, index, function(tuple)
+        table.insert(ret_list, tuple)
+    end)
 
-    sort_by_domain = box.unpack('i', sort_by_domain) ~= 0
-    sort_reverse = box.unpack('i', sort_reverse) ~= 0
+    return _selist2_unpack_result(ret_list, offset, limit, sort_reverse)
+end
 
-    local count = {}
+function _selist2_get_top_domains_count(filter_cat)
+    local count = 0
+    local uniq_domains = {}
 
-    local tuple
-    for tuple in box.space[0].index[0]:iterator() do
-        if not filter_cat or filter_cat == box.unpack('i', tuple[4]) then
-            count[tuple[5]] = (count[tuple[5]] or 0) + 1
+    _selist2_iterate_tuples(filter_cat, function(tuple)
+        if not uniq_domains[tuple[5]] then
+            count = count + 1
+            uniq_domains[tuple[5]] = 1
         end
+    end)
+
+    return count
+end
+
+function _selist2_get_top_domains(offset, limit, filter_cat, sort_order, sort_reverse)
+    local uniq_domains = {}
+
+    _selist2_iterate_tuples(filter_cat, function(tuple)
+        uniq_domains[tuple[5]] = (uniq_domains[tuple[5]] or 0) + 1
+    end)
+
+    local ret_list = {}
+
+    local k, v
+    for k, v in pairs(uniq_domains) do
+        table.insert(ret_list, box.tuple.new({ k, v }))
     end
 
-    local ret = {}
-    for k, v in pairs(count) do
-        table.insert(ret, box.tuple.new({ k, v }))
-    end
-
-    if sort_by_domain then
+    if sort_order == 'domain' then
         if sort_reverse then
-            table.sort(ret, function(a, b) return a[0] > b[0] end)
+            table.sort(ret_list, function(a, b) return a[0] > b[0] end)
         else
-            table.sort(ret, function(a, b) return a[0] < b[0] end)
+            table.sort(ret_list, function(a, b) return a[0] < b[0] end)
         end
     else
         if sort_reverse then
-            table.sort(ret, function(a, b) return a[1] < b[1] end)
+            table.sort(ret_list, function(a, b) return a[1] < b[1] end)
         else
-            table.sort(ret, function(a, b) return a[1] > b[1] end)
+            table.sort(ret_list, function(a, b) return a[1] > b[1] end)
         end
     end
 
-    if offset >= #ret then
+    return _selist2_unpack_result(ret_list, offset, limit)
+end
+
+function _selist2_iterate_tuples(filter_cat, index, handler)
+    if not handler then
+        handler = index
+        index = 0
+    end
+
+    local tuple
+    for tuple in box.space[0].index[index]:iterator() do
+        if not filter_cat or filter_cat == box.unpack('i', tuple[4]) then
+            handler(tuple)
+        end
+    end
+end
+
+function _selist2_unpack_result(result, offset, limit, sort_reverse)
+    if offset >= #result then
         return
     end
 
-    return unpack(ret, offset + 1, math.min(#ret, offset + limit))
+    local limit_from, limit_to = offset + 1, math.min(#result, offset + limit)
+
+    if not sort_reverse then
+        return unpack(result, limit_from, limit_to)
+    end
+
+    limit_from, limit_to = #result + 1 - limit_to, #result + 1 - limit_from
+
+    local reverse = {}
+
+    local v
+    for _, v in ipairs({ unpack(result, limit_from, limit_to) }) do
+        table.insert(reverse, 0, v)
+    end
+
+    return unpack(reverse)
 end
