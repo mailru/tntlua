@@ -340,7 +340,7 @@ function _selist2_unpack_result(result, offset, limit, sort_reverse)
 
     local v
     for _, v in ipairs({ unpack(result, limit_from, limit_to) }) do
-        table.insert(reverse, 0, v)
+        table.insert(reverse, 1, v)
     end
 
     return unpack(reverse)
