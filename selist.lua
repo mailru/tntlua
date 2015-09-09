@@ -68,7 +68,7 @@ function selist2_add_sender(mask, name_ru, name_en, cat)
     else
         domain_to_store = find_second_level_domain(email_domain_part)
     end
-    if domain_to_store == nil then
+    if not domain_to_store then
         error('Cannot find needed domain level')
     end
     return box.auto_increment_uniq(0, mask, name_ru, name_en, box.unpack('i', cat), domain_to_store):transform(5,1)
@@ -122,7 +122,7 @@ function _selist2_search_by_domain(domain)
     local ret_size = 0
     local orig = {}
 
-    if domain_to_find != nil then
+    if domain_to_find then
         orig = {box.select(0, 2, domain_to_find)}
         for _, tuple in pairs(orig) do
             table.insert(ret, tuple:transform(5, 1))
@@ -134,8 +134,8 @@ function _selist2_search_by_domain(domain)
     end
 
     domain_to_find = find_second_level_domain(domain)
-    if domain_to_find == nil then
-        error('error string sended as domain')
+    if not domain_to_find  then
+        error('error string sent as domain')
     end
 
     orig = {box.select(0, 2, domain_to_find)}
