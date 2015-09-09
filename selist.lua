@@ -30,25 +30,16 @@ end
 
 local function find_third_level_domain(email_domain_part)
     local domain_parts = mysplit(email_domain_part, '.')
-    if #domain_parts == 0 then
-        error('In mask ' .. mask .. ' no domain found')
-    end
-    if #domain_parts == 1 then
-        error('In mask ' .. mask .. ' only first level domain found')
-    end
-    if #domain_parts == 2 then
-        error('In mask ' .. mask .. ' only second level domain found')
+    if #domain_parts <= 2 then
+        return nil
     end
     return domain_parts[#domain_parts - 2] .. '.' .. domain_parts[#domain_parts - 1] .. '.' .. domain_parts[#domain_parts]
 end
 
 local function find_second_level_domain(email_domain_part)
     local domain_parts = mysplit(email_domain_part, '.')
-    if #domain_parts == 0 then
-        error('In mask ' .. mask .. ' no domain found')
-    end
-    if #domain_parts == 1 then
-        error('In mask ' .. mask .. ' only first level domain found')
+    if #domain_parts <= 1 then
+        return nil
     end
     return domain_parts[#domain_parts - 1] .. '.' .. domain_parts[#domain_parts]
 end
@@ -76,6 +67,9 @@ function selist2_add_sender(mask, name_ru, name_en, cat)
         domain_to_store = find_third_level_domain(email_domain_part)
     else
         domain_to_store = find_second_level_domain(email_domain_part)
+    end
+    if not domain_to_store then
+        error('Cannot find needed domain level')
     end
     return box.auto_increment_uniq(0, mask, name_ru, name_en, box.unpack('i', cat), domain_to_store):transform(5,1)
 end
@@ -122,14 +116,29 @@ function selist2_search_by_domain(...)
 end
 
 function _selist2_search_by_domain(domain)
-    local domain_to_find = ""
-    if need_third_level(domain) then
-        domain_to_find = find_third_level_domain(domain)
-    else
-        domain_to_find = find_second_level_domain(domain)
-    end
+    local domain_to_find = find_third_level_domain(domain)
+
     local ret = { }
-    local orig = {box.select(0, 2, domain_to_find)}
+    local ret_size = 0
+    local orig = {}
+
+    if domain_to_find then
+        orig = {box.select(0, 2, domain_to_find)}
+        for _, tuple in pairs(orig) do
+            table.insert(ret, tuple:transform(5, 1))
+            ret_size = ret_size + 1
+        end
+        if ret_size > 0 then
+            return unpack(ret)
+        end
+    end
+
+    domain_to_find = find_second_level_domain(domain)
+    if not domain_to_find  then
+        error('error string sent as domain')
+    end
+
+    orig = {box.select(0, 2, domain_to_find)}
     for _, tuple in pairs(orig) do
         table.insert(ret, tuple:transform(5, 1))
     end
