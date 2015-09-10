@@ -12,12 +12,12 @@
 --   Index 0: TREE { coll_id, rmt_fld_id }
 --
 -- Space 1: Errors that occurred during synchronization of local changes on the remote side.
---   Tuple: { email (STR), error_index (NUM), description (STR) }
+--   Tuple: { email (STR), error_index (NUM), timestamp (NUM), description (STR) }
 --   Index 0: TREE { email, error_index }
 --
 --   Description field contains some tarantool independent information about a problem.
 --   Example:
---     'test@mail.ru': {1, 'error while appending message on storage'}
+--     'test@mail.ru': {1, 1441822966, 'error while appending message on storage'}
 --
 
 function hermes_get(coll_id)
@@ -109,6 +109,7 @@ end
 
 
 local MAX_STORED_ERRORS = 50
+local AUTO_INC_ERR_ID_KEY = 'auto_increment_error_id'
 
 function hermes_error_add(key, timestamp, error_description)
 	local done = nil
@@ -116,14 +117,6 @@ function hermes_error_add(key, timestamp, error_description)
 
 	while not done do
 		local data = { box.select(1, 0, key) }
-		local count = #data
-		local min_id, max_id = 0, 0
-
-		if count ~= 0 then
-			-- Records are in the correct order throwgh tarantool index format
-			min_id = box.unpack('i', data[1][1])
-			max_id = box.unpack('i', data[count][1])
-		end
 
 		for _, v in pairs(data) do
 			-- To prevent records duplicates
@@ -132,12 +125,16 @@ function hermes_error_add(key, timestamp, error_description)
 			end
 		end
 
-		if count >= MAX_STORED_ERRORS then
+		if #data >= MAX_STORED_ERRORS then
 			-- Remove oldest record
+			-- Records are in the correct order throwgh tarantool index format
+
+			local min_id = box.unpack('i', data[1][1])
 			box.delete(1, key, min_id)
 		end
 
-		done = box.insert(1, key, max_id + 1, timestamp, error_description)
+		local max_id = box.counter.inc(1, AUTO_INC_ERR_ID_KEY, 0)
+		done = box.insert(1, key, max_id, timestamp, error_description)
 	end
 end
 
