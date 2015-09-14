@@ -1,4 +1,4 @@
-local DISABLE_SEARCH_BY_DOMAIN = false
+local DISABLE_SEARCH_BY_DOMAIN = true
 
 function box.auto_increment_uniq(spaceno, uniq, ...)
     local tuple = box.select(spaceno, 1, uniq)
