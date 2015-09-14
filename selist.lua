@@ -167,6 +167,14 @@ function selist2_get_senders(...)
     return _selist2_get_senders(_selist2_parse_params(...))
 end
 
+function selist2_get_search_count(value, ...)
+    return _selist2_get_search_count(value, _selist2_parse_params_count(...))
+end
+
+function selist2_get_search(value, ...)
+    return _selist2_get_search(value, _selist2_parse_params(...))
+end
+
 function selist2_get_top_domains_count(...)
     return _selist2_get_top_domains_count(_selist2_parse_params_count(...))
 end
@@ -216,6 +224,45 @@ function _selist2_get_senders(offset, limit, filter_cat, sort_order, sort_revers
 
     _selist2_iterate_tuples(filter_cat, index, function(tuple)
         table.insert(ret_list, tuple)
+    end)
+
+    return _selist2_unpack_result(ret_list, offset, limit, sort_reverse)
+end
+
+function _selist2_check_search_cond(value, tuple)
+    value = string.lower(value)
+
+    return
+        string.find(string.lower(tuple[1]), value) or
+        string.find(string.lower(tuple[2]), value) or
+        string.find(string.lower(tuple[3]), value)
+end
+
+function _selist2_get_search_count(value, filter_cat)
+    local count = 0
+
+    local sort_index = { name = 1, domain = 2, name_ru = 4, name_rus = 4, name_en = 5, name_eng = 5, cat = 3 }
+    local index = sort_index[sort_order] or 0
+
+    _selist2_iterate_tuples(filter_cat, index, function(tuple)
+        if _selist2_check_search_cond(value, tuple) then
+            count = count + 1
+        end
+    end)
+
+    return count
+end
+
+function _selist2_get_search(value, offset, limit, filter_cat, sort_order, sort_reverse)
+    local ret_list = {}
+
+    local sort_index = { name = 1, domain = 2, name_ru = 4, name_rus = 4, name_en = 5, name_eng = 5, cat = 3 }
+    local index = sort_index[sort_order] or 0
+
+    _selist2_iterate_tuples(filter_cat, index, function(tuple)
+        if _selist2_check_search_cond(value, tuple) then
+            table.insert(ret_list, tuple)
+        end
     end)
 
     return _selist2_unpack_result(ret_list, offset, limit, sort_reverse)
@@ -297,7 +344,7 @@ function _selist2_unpack_result(result, offset, limit, sort_reverse)
 
     local v
     for _, v in ipairs({ unpack(result, limit_from, limit_to) }) do
-        table.insert(reverse, 0, v)
+        table.insert(reverse, 1, v)
     end
 
     return unpack(reverse)
