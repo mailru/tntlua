@@ -115,6 +115,10 @@ function selist2_search_by_domain(...)
     return _selist2_search_by_domain(...)
 end
 
+function selist2_search_by_domain_unswitchable(...)
+    return _selist2_search_by_domain(...)
+end
+
 function _selist2_search_by_domain(domain)
     local domain_to_find = find_third_level_domain(domain)
 
