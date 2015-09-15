@@ -293,20 +293,20 @@ function _selist2_get_top_domains(offset, limit, filter_cat, sort_order, sort_re
 
     local k, v
     for k, v in pairs(uniq_domains) do
-        table.insert(ret_list, box.tuple.new({ k, v }))
+        table.insert(ret_list, { k, v })
     end
 
     if sort_order == 'domain' then
         if sort_reverse then
-            table.sort(ret_list, function(a, b) return a[0] > b[0] end)
+            table.sort(ret_list, function(a, b) return a[1] > b[1] end)
         else
-            table.sort(ret_list, function(a, b) return a[0] < b[0] end)
+            table.sort(ret_list, function(a, b) return a[1] < b[1] end)
         end
     else
         if sort_reverse then
-            table.sort(ret_list, function(a, b) return a[1] < b[1] end)
+            table.sort(ret_list, function(a, b) return a[2] < b[2] end)
         else
-            table.sort(ret_list, function(a, b) return a[1] > b[1] end)
+            table.sort(ret_list, function(a, b) return a[2] > b[2] end)
         end
     end
 
