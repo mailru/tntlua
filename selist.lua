@@ -1,3 +1,12 @@
+if ffi == nil then
+    if require == nil then
+        error('You must restart tarantool')
+    end
+    ffi = require('ffi')
+    ffi.cdef('char * strchr(const char *s, int c);');
+    ffi.cdef('char * strrchr(const char *s, int c);');
+end
+
 local DISABLE_SEARCH_BY_DOMAIN = true
 
 function box.auto_increment_uniq(spaceno, uniq, ...)
@@ -16,32 +25,30 @@ function box.auto_increment_uniq(spaceno, uniq, ...)
     return box.auto_increment(spaceno, uniq, ...)
 end
 
-local function mysplit(inputstr, sep)
-        if sep == nil then
-                sep = "%s"
-        end
-        local t={} ; i=1
-        for str in string.gmatch(inputstr, "([^"..sep.."]+)") do
-                t[i] = str
-                i = i + 1
-        end
-        return t
+local function find_level_domain_impl(email_domain_part, n)
+    local t = {}
+    local i = 1
+    local point = ffi.C.strchr(email_domain_part, 46)
+    while point ~= nil do
+        t[i] = point
+        i = i + 1
+        point = ffi.C.strchr(point + 1, 46)
+    end
+    if #t < n - 1 then
+        return nil
+    end
+    if #t == n - 1 then
+        return email_domain_part
+    end
+    return ffi.string(t[#t - n + 1] + 1)
 end
 
 local function find_third_level_domain(email_domain_part)
-    local domain_parts = mysplit(email_domain_part, '.')
-    if #domain_parts <= 2 then
-        return nil
-    end
-    return domain_parts[#domain_parts - 2] .. '.' .. domain_parts[#domain_parts - 1] .. '.' .. domain_parts[#domain_parts]
+    return find_level_domain_impl(email_domain_part, 3)
 end
 
 local function find_second_level_domain(email_domain_part)
-    local domain_parts = mysplit(email_domain_part, '.')
-    if #domain_parts <= 1 then
-        return nil
-    end
-    return domain_parts[#domain_parts - 1] .. '.' .. domain_parts[#domain_parts]
+    return find_level_domain_impl(email_domain_part, 2)
 end
 
 function string.ends(str, end_of_str)
@@ -59,8 +66,11 @@ local function need_third_level(domain)
 end
 
 function selist2_add_sender(mask, name_ru, name_en, cat)
-    local splited = mysplit(mask, '@')
-    local email_domain_part = splited[#splited]
+    local point = ffi.C.strrchr(mask, 64)
+    if point == nil then
+        error('No dog in mask')
+    end
+    local email_domain_part = ffi.string(point + 1)
 
     local domain_to_store = ""
     if need_third_level(email_domain_part) then
@@ -129,8 +139,8 @@ function _selist2_search_by_domain(domain)
     if domain_to_find then
         orig = {box.select(0, 2, domain_to_find)}
         for _, tuple in pairs(orig) do
-            table.insert(ret, tuple:transform(5, 1))
             ret_size = ret_size + 1
+            ret[ret_size] = tuple
         end
         if ret_size > 0 then
             return unpack(ret)
@@ -144,7 +154,8 @@ function _selist2_search_by_domain(domain)
 
     orig = {box.select(0, 2, domain_to_find)}
     for _, tuple in pairs(orig) do
-        table.insert(ret, tuple:transform(5, 1))
+        ret_size = ret_size + 1
+        ret[ret_size] = tuple
     end
     return unpack(ret)
 end
