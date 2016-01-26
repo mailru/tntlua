@@ -123,23 +123,27 @@ function selist2_search_by_domain(...)
         return unpack({})
     end
 
-    return _selist2_search_by_domain(...)
+    return _selist2_search_by_domain(..., true)
 end
 
 function selist2_search_by_domain_unswitchable(...)
-    return _selist2_search_by_domain(...)
+    return _selist2_search_by_domain(..., false)
 end
 
-function _selist2_search_by_domain(domain)
+function _selist2_search_by_domain(domain, limited)
     local domain_to_find = find_third_level_domain(domain)
 
     local ret = { }
     local ret_size = 0
 
     if domain_to_find then
-        ret = {box.select_limit(0, 2, 0, ENTRIES_PER_DOMAIN, domain_to_find)}
-        if #ret == ENTRIES_PER_DOMAIN then
-            error('Limit reached by domain: ' .. domain_to_find)
+        if limited then
+            ret = {box.select_limit(0, 2, 0, ENTRIES_PER_DOMAIN, domain_to_find)}
+            if #ret == ENTRIES_PER_DOMAIN then
+                error('Limit reached by domain: ' .. domain_to_find)
+            end
+        else
+            ret = {box.select(0, 2, domain_to_find)}
         end
         if #ret > 0 then
             return ret
@@ -151,10 +155,15 @@ function _selist2_search_by_domain(domain)
         error('error string sent as domain')
     end
 
-    ret = {box.select_limit(0, 2, 0, ENTRIES_PER_DOMAIN, domain_to_find)}
-    if #ret == ENTRIES_PER_DOMAIN then
-        error('Limit reached by domain: ' .. domain_to_find)
+    if limited then
+        ret = {box.select_limit(0, 2, 0, ENTRIES_PER_DOMAIN, domain_to_find)}
+        if #ret == ENTRIES_PER_DOMAIN then
+            error('Limit reached by domain: ' .. domain_to_find)
+        end
+    else
+        ret = {box.select(0, 2, domain_to_find)}
     end
+
     return ret
 end
 
