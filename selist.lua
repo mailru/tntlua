@@ -8,6 +8,7 @@ if ffi == nil then
 end
 
 local DISABLE_SEARCH_BY_DOMAIN = true
+local ENTRIES_PER_DOMAIN = 101
 
 function box.auto_increment_uniq(spaceno, uniq, ...)
     local tuple = box.select(spaceno, 1, uniq)
@@ -134,16 +135,14 @@ function _selist2_search_by_domain(domain)
 
     local ret = { }
     local ret_size = 0
-    local orig = {}
 
     if domain_to_find then
-        orig = {box.select(0, 2, domain_to_find)}
-        for _, tuple in pairs(orig) do
-            ret_size = ret_size + 1
-            ret[ret_size] = tuple
+        ret = {box.select_limit(0, 2, 0, ENTRIES_PER_DOMAIN, domain_to_find)}
+        if #ret == ENTRIES_PER_DOMAIN then
+            error('Limit reached by domain: ' .. domain_to_find)
         end
-        if ret_size > 0 then
-            return unpack(ret)
+        if #ret > 0 then
+            return ret
         end
     end
 
@@ -152,12 +151,11 @@ function _selist2_search_by_domain(domain)
         error('error string sent as domain')
     end
 
-    orig = {box.select(0, 2, domain_to_find)}
-    for _, tuple in pairs(orig) do
-        ret_size = ret_size + 1
-        ret[ret_size] = tuple
+    ret = {box.select_limit(0, 2, 0, ENTRIES_PER_DOMAIN, domain_to_find)}
+    if #ret == ENTRIES_PER_DOMAIN then
+        error('Limit reached by domain: ' .. domain_to_find)
     end
-    return unpack(ret)
+    return ret
 end
 
 function selist2_get_exceptions()
