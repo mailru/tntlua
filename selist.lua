@@ -140,7 +140,7 @@ function _selist2_search_by_domain(domain, limited)
         if limited then
             ret = {box.select_limit(0, 2, 0, ENTRIES_PER_DOMAIN, domain_to_find)}
             if #ret == ENTRIES_PER_DOMAIN then
-                error('Limit reached by domain: ' .. domain_to_find)
+                error('Limit (' .. ENTRIES_PER_DOMAIN .. ') reached by domain: ' .. domain_to_find)
             end
         else
             ret = {box.select(0, 2, domain_to_find)}
@@ -158,7 +158,7 @@ function _selist2_search_by_domain(domain, limited)
     if limited then
         ret = {box.select_limit(0, 2, 0, ENTRIES_PER_DOMAIN, domain_to_find)}
         if #ret == ENTRIES_PER_DOMAIN then
-            error('Limit reached by domain: ' .. domain_to_find)
+            error('Limit (' .. ENTRIES_PER_DOMAIN .. ') reached by domain: ' .. domain_to_find)
         end
     else
         ret = {box.select(0, 2, domain_to_find)}
