@@ -145,7 +145,7 @@ function _selist2_search_by_domain(domain, limited)
         else
             ret = {box.select(0, 2, domain_to_find)}
         end
-        if #ret > 0 then
+        if ret[1] then
             return ret
         end
     end
@@ -164,6 +164,9 @@ function _selist2_search_by_domain(domain, limited)
         ret = {box.select(0, 2, domain_to_find)}
     end
 
+    if not ret[1] then
+        return unpack({}) -- return emty tab, because perl awaits such format for empty data.
+    end
     return ret
 end
 
