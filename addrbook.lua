@@ -43,6 +43,15 @@ function addrbook_add_recipient(user_id, rcp_email, rcp_name, timestamp)
 	return 0 -- contact weight updated only
 end
 
+function addrbook_get_recipients(user_id)
+	if user_id == nil then
+		return nil
+	end
+
+	user_id = box.unpack('i', user_id)
+	return box.select(1, 0, user_id)
+end
+
 function addrbook_get(user_id)
 	if user_id == nil then
 		return nil
