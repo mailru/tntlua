@@ -1,9 +1,12 @@
 --
 -- bida.lua
 --
-
+-- BIDA (ver. 1)
 --
--- simple birthday storage
+-- Space 0: simple birthday storage
+--   Tuple: { email (STR), date (INT) }
+--   Index 0: HASH { email }
+--   Index 1: TREE { date, email }
 --
 
 local limit = 7000
