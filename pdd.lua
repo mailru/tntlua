@@ -4,11 +4,11 @@ function get_mxstatus(pdd_domain)
         return {0, 0}
     end
 
-    local flags = 0
-    if #tup >= 2 then
-        flags = tup[1]
+    if #tup < 3 then
+        error("Not enough elements of tuple")
     end
 
+    local flags = tup[1]
     return {1, flags}
 end
 
@@ -18,15 +18,12 @@ function get_pdd(pdd_domain)
         return {0, 0, ''}
     end
 
-    local flags = 0
-    if #tup >= 2 then
-        flags = tup[1]
+    if #tup < 3 then
+        error("Not enough elements of tuple")
     end
 
-    local defuser = ''
-    if #tup >= 3 then
-        defuser = tup[2]
-    end
+    local flags = tup[1]
+    local defuser = tup[2]
 
     return {1, flags, defuser}
 end
