@@ -29,13 +29,13 @@ function deferr_put(uid, release_time, data)
     local ok, ret = pcall(function(uid, release_time, data)
         local delay = release_time - math.floor(fiber.time())
         if delay < 0 then
-            show_error("Invalid release_time found for user " .. uid .. ", data == " .. data)
+            show_error("Invalid release_time (" .. release_time .. ") found for user (delay < 0), uid == " .. uid .. ", data == " .. data)
         end
         return queue.tube.deferrs:put({ uid, release_time, data }, { delay = delay })
     end, uid, release_time, data)
 
     if not ok then
-        show_error(str) -- unexpected error. Pass it to capron
+        show_error(ret) -- unexpected error. Pass it to capron
     end
 
     return get_task_id(ret)
