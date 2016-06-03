@@ -214,8 +214,10 @@ end
 -- Function will select all tasks of a specific user in the send_date order
 function select_user_tasks(uid, msg_id)
     local index = box.space.relations.index.uid
-    if msg_id then
+    if msg_id and msg_id ~= "" then
         index = box.space.relations.index.uid_uidl
+    else
+        msg_id = nil
     end
 
     local ret = index:select({ uid, msg_id }, { limit = MAX_TASKS })
@@ -237,7 +239,7 @@ function bernadette_delete_real(task)
     box.space.relations.index.task_id:delete(task:id())
 end
 
-function bernadette_delete_impl(uid, msg_id)
+function bernadette_delete_impl(uid, msg_id, ignore_in_process)
     local task = find_task_by_uidl(uid, msg_id)
 
     if not task:initialized() then
@@ -245,6 +247,10 @@ function bernadette_delete_impl(uid, msg_id)
     end
 
     local status = get_task_status(task)
+    if ignore_in_process and status == ERR_IN_PROCESS then
+        status = ERR_SUCC
+    end
+
     if status ~= ERR_SUCC then
         return render_error(status)
     end
@@ -342,7 +348,7 @@ function bernadette_peek(user_id, message_id)
     return select_user_tasks(user_id, message_id)
 end
 
-function bernadette_delete(user_id, message_id)
+function bernadette_delete_x(user_id, message_id, ignore_in_process)
     if user_id == nil or user_id == "" or message_id == nil or message_id == "" then
         show_error("bernadette_delete: Invalid user_id or uidl")
     end
@@ -360,4 +366,12 @@ function bernadette_delete(user_id, message_id)
         box.commit()
         return ret
     end
+end
+
+function bernadette_delete(user_id, message_id)
+    return bernadette_delete_x(user_id, message_id, false)
+end
+
+function bernadette_force_delete(user_id, message_id)
+    return bernadette_delete_x(user_id, message_id, true)
 end

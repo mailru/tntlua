@@ -374,7 +374,7 @@ test:test("select user tasks test", function (test)
     local call_tests = 2
     local function check_call(test, uid, uidl)
         local s, r = pcall(function (uid, uidl)
-            return { select_user_tasks(uid, uidl) }
+            return { select_user_tasks(uid, uidl or "") }
         end, uid, uidl)
 
         test:ok(s, "no exception happened")
@@ -526,11 +526,11 @@ test:test("real delete test", function (test)
 end)
 
 test:test("delete impl test", function (test)
-    test:plan(3)
+    test:plan(4)
 
     test:test("no task", function (test)
         local e, r = pcall(function ()
-            return bernadette_delete_impl(test_user_id, "1")
+            return bernadette_delete_impl(test_user_id, "1", false)
         end)
 
         test:plan(4)
@@ -546,7 +546,7 @@ test:test("delete impl test", function (test)
         box.space.relations:insert({ test_user_id, "1", t[1], 100, "xxx" })
 
         local e, r = pcall(function ()
-            return bernadette_delete_impl(test_user_id, "1")
+            return bernadette_delete_impl(test_user_id, "1", false)
         end)
 
         test:plan(4)
@@ -557,12 +557,29 @@ test:test("delete impl test", function (test)
         cleanup(t[1])
     end)
 
+    test:test("ignore task in process", function (test)
+        local t = queue.tube.bernadette:put(nil, { release = 0 }) -- task will be 'ready'
+        queue.tube.bernadette.raw.space.index.task_id:update({t[1]}, {{'=',2,'t'}}) -- task was taken
+        box.space.relations:insert({ test_user_id, "1", t[1], 100, "xxx" })
+
+        local e, r = pcall(function ()
+            return bernadette_delete_impl(test_user_id, "1", true)
+        end)
+
+        test:plan(4)
+        test:ok(e, "no exception happened")
+        test:istable(r, "table returned")
+        test:is(#r, 3, "valid number of elements")
+        test:is_deeply(r, { 0, 100, "xxx" }, "valid data")
+        cleanup(t[1])
+    end)
+
     test:test("success", function (test)
         local t = queue.tube.bernadette:put(nil, { release = 100 })
         box.space.relations:insert({ test_user_id, "1", t[1], 100, "xxx" })
 
         local e, r = pcall(function ()
-            return bernadette_delete_impl(test_user_id, "1")
+            return bernadette_delete_impl(test_user_id, "1", false)
         end)
 
         test:plan(5)
