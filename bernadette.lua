@@ -375,3 +375,8 @@ end
 function bernadette_force_delete(user_id, message_id)
     return bernadette_delete_x(user_id, message_id, true)
 end
+
+box.schema.func.create('bernadette_peek', { if_not_exists = true })
+box.schema.func.create('bernadette_replace', { if_not_exists = true })
+box.schema.func.create('bernadette_delete', { if_not_exists = true })
+box.schema.func.create('bernadette_force_delete', { if_not_exists = true })
