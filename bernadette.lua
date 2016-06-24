@@ -260,7 +260,7 @@ function bernadette_delete_impl(uid, msg_id, ignore_in_process)
     return {
         ERR_SUCC,
         task:send_date(),
-        task:data()
+        task:data() or "",
     }
 end
 
