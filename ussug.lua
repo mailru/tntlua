@@ -1,16 +1,16 @@
-function add_sender_for_user(user_id, ...)
-    user_id = box.unpack("i", user_id)
+function ussug_get(...)
     local data = {...}
+    local ret = {}
     for _, v in pairs(data) do
-        status, res = pcall(box.auto_increment, 0, v)
-        if not status then
-            res = box.select(0, 1, v)
+        local selected = { box.select(0, 0, v) }
+        for _, tuple in pairs(selected) do
+            table.insert(ret, tuple)
         end
-
-        res = { res }
-
-        pkey = box.unpack('l',res[1][0])
-
-        box.counter.inc(1, user_id, pkey)
     end
+    return ret
+end
+
+function ussug_insert(id, str)
+    id = box.unpack("l", id)
+    box.replace(0, id, str)
 end
