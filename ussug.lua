@@ -7,7 +7,10 @@ function ussug_get(...)
             table.insert(ret, tuple)
         end
     end
-    return ret
+    if #ret > 0 then
+        return ret
+    end
+    return
 end
 
 function ussug_insert(id, str)
