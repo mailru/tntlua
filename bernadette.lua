@@ -19,8 +19,16 @@ if not queue.tube.bernadette then
     queue.start()
 end
 
+-- ============================================================================== --
+
 -- not local for tests
+-- maximum number of deferred messages supported
 MAX_TASKS = 200
+
+-- timeout for take() requests, in seconds
+TAKE_TIMEOUT = 30
+
+-- ============================================================================== --
 
 local FIELD_UID = 1
 local FIELD_UIDL = 2
@@ -168,6 +176,15 @@ function Task:user_serialize()
     }
 end
 
+function Task:user_serialize_with_uid()
+    return {
+        self:user_id(),
+        self:uidl(),
+        self:send_date(),
+        self:data() or "",
+    }
+end
+
 function Task:initialized() return self.__user_id ~= nil end
 function Task:user_id() return self.__user_id end
 function Task:uidl() return self.__uidl end
@@ -265,7 +282,7 @@ function bernadette_delete_impl(uid, msg_id, ignore_in_process)
 end
 
 function bernadette_put_real(params)
-    local task_data = queue.tube.bernadette:put(nil, { release = params:delay() })
+    local task_data = queue.tube.bernadette:put(nil, { delay = params:delay() })
     if task_data == nil or #task_data < 2 then
         show_error("Can't put new task in queue")
     end
@@ -311,6 +328,20 @@ function bernadette_replace_impl(params)
     }
 end
 
+function bernadette_make_transaction(callback, ...)
+    box.begin()
+
+    local ok, ret = pcall(callback, ...)
+
+    if not ok then
+        box.rollback()
+        show_error(ret)
+    else
+        box.commit()
+        return ret
+    end
+end
+
 --
 -- Function inserts new task into queue. If old_msg_id given, old task will be replaced.
 --
@@ -321,19 +352,9 @@ function bernadette_replace(user_id, old_msg_id, new_msg_id, send_date, data)
         return params
     end
 
-    box.begin() -- begin transaction
-
-    local ok, ret = pcall(function (params)
+    return bernadette_make_transaction(function (params)
         return bernadette_replace_impl(params)
     end, params)
-
-    if not ok then
-        box.rollback()
-        show_error(ret)
-    else
-        box.commit()
-        return ret
-    end
 end
 
 --
@@ -353,19 +374,9 @@ function bernadette_delete_x(user_id, message_id, ignore_in_process)
         show_error("bernadette_delete: Invalid user_id or uidl")
     end
 
-    box.begin() -- begin transaction
-
-    local ok, ret = pcall(function (user_id, message_id)
-        return bernadette_delete_impl(user_id, message_id)
-    end, user_id, message_id)
-
-    if not ok then
-        box.rollback()
-        show_error(ret)
-    else
-        box.commit()
-        return ret
-    end
+    return bernadette_make_transaction(function (user_id, message_id, ignore_in_process)
+        return bernadette_delete_impl(user_id, message_id, ignore_in_process)
+    end, user_id, message_id, ignore_in_process)
 end
 
 function bernadette_delete(user_id, message_id)
@@ -376,7 +387,51 @@ function bernadette_force_delete(user_id, message_id)
     return bernadette_delete_x(user_id, message_id, true)
 end
 
+--
+-- Function tries to select any task from queue.
+-- If there is is no free tasks found during TAKE_TIMEOUT, nil will be returned.
+--
+function bernadette_take()
+    local queued_task = queue.tube.bernadette:take(TAKE_TIMEOUT)
+    if queued_task == nil then
+        return nil
+    end
+
+    local task = Task:new(box.space.relations.index.task_id:get({ queued_task[1] }))
+    if not task:initialized() then
+        log.error("Task with id " .. queued_task[1] .. " not found in relations space")
+        show_error("Invalid task #" .. queued_task[1] .. " found in queue") -- just in case
+    end
+
+    return task:user_serialize_with_uid()
+end
+
+--
+-- Function releases task into queue by id.
+-- Function returns true if everything is OK, and false othewise.
+--
+function bernadette_release(user_id, msg_id, delay)
+    local task = Task:new(box.space.relations.index.uid_uidl:get({ user_id, msg_id }))
+    if not task:initialized() then
+        -- Task can be deleted by anyone else
+        return false
+    end
+
+    local ok, ret = pcall(function(id)
+        queue.tube.bernadette:release(id, { delay = delay, })
+    end, task:id())
+
+    if not ok then
+        show_error(ret)
+    end
+
+    return true
+end
+
 box.schema.func.create('bernadette_peek', { if_not_exists = true })
 box.schema.func.create('bernadette_replace', { if_not_exists = true })
 box.schema.func.create('bernadette_delete', { if_not_exists = true })
 box.schema.func.create('bernadette_force_delete', { if_not_exists = true })
+
+box.schema.func.create('bernadette_take', { if_not_exists = true })
+box.schema.func.create('bernadette_release', { if_not_exists = true })
