@@ -428,10 +428,27 @@ function bernadette_release(user_id, msg_id, delay)
     return true
 end
 
+--
+-- Function removes task from the queue using ack()
+--
+function bernadette_ack(user_id, msg_id)
+    local task = Task:new(box.space.relations.index.uid_uidl:get({ user_id, msg_id }))
+    if not task:initialized() then
+        return false
+    end
+
+    return bernadette_make_transaction(function (task_id)
+        queue.tube.bernadette:ack(task_id)
+        box.space.relations.index.task_id:delete(task_id)
+        return true
+    end, task:id())
+end
+
 box.schema.func.create('bernadette_peek', { if_not_exists = true })
 box.schema.func.create('bernadette_replace', { if_not_exists = true })
 box.schema.func.create('bernadette_delete', { if_not_exists = true })
 box.schema.func.create('bernadette_force_delete', { if_not_exists = true })
 
+box.schema.func.create('bernadette_ack', { if_not_exists = true })
 box.schema.func.create('bernadette_take', { if_not_exists = true })
 box.schema.func.create('bernadette_release', { if_not_exists = true })
