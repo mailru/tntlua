@@ -29,7 +29,7 @@ MAX_TASKS = 200
 TAKE_TIMEOUT = 30
 
 -- maximum task delay time
-MAX_DELAY = 2 * 365 * 24 * 60 -- 2 years
+MAX_DELAY = 2 * 365 * 24 * 60 * 60 -- 2 years
 
 -- ============================================================================== --
 
