@@ -28,6 +28,9 @@ MAX_TASKS = 200
 -- timeout for take() requests, in seconds
 TAKE_TIMEOUT = 30
 
+-- maximum task delay time
+MAX_DELAY = 2 * 365 * 24 * 60 -- 2 years
+
 -- ============================================================================== --
 
 local FIELD_UID = 1
@@ -92,7 +95,7 @@ function ReplaceParams:new(user_id, old_msg_id, new_msg_id, send_date, data)
     end
 
     local time = math.floor(fiber.time())
-    if send_date == nil or send_date < time then
+    if (send_date == nil) or (send_date < time) or (send_date > math.ceil(fiber:time()) + MAX_DELAY) then
         log.warn("bernadette_replace: invalid send_date: " .. send_date .. ", at least " .. time .. " is required")
         return render_error(ERR_INVALID_TIMESTAMP)
     end
