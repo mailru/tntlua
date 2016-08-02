@@ -35,6 +35,7 @@ local FIELD_UIDL = 2
 local FIELD_TASK_ID = 3
 local FIELD_SEND_DATE = 4
 local FIELD_DATA = 5
+local FIELD_RELEASE_ATTEMPT_NO = 6
 
 -- return codes descrition
 local ERR_SUCC = 0
@@ -142,6 +143,7 @@ function Task:new(tuple)
         __task_id     = tuple[FIELD_TASK_ID],
         __send_date   = tuple[FIELD_SEND_DATE],
         __data        = tuple[FIELD_DATA],
+        __attempt_no  = tuple[FIELD_RELEASE_ATTEMPT_NO],
     }
 
     setmetatable(task, self)
@@ -164,6 +166,7 @@ function Task:serialize()
     tuple[FIELD_TASK_ID] = self:id()
     tuple[FIELD_SEND_DATE] = self:send_date()
     tuple[FIELD_DATA] = self:data()
+    tuple[FIELD_RELEASE_ATTEMPT_NO] = self:attempt_no()
 
     return tuple
 end
@@ -176,12 +179,13 @@ function Task:user_serialize()
     }
 end
 
-function Task:user_serialize_with_uid()
+function Task:user_serialize_with_uid_and_attempt_no()
     return {
         self:user_id(),
         self:uidl(),
         self:send_date(),
         self:data() or "",
+        self:attempt_no(),
     }
 end
 
@@ -191,6 +195,9 @@ function Task:uidl() return self.__uidl end
 function Task:id() return self.__task_id end
 function Task:send_date() return self.__send_date end
 function Task:data() return self.__data end
+function Task:attempt_no() return self.__attempt_no or 0 end
+
+function Task:inc_attempt_no() self.__attempt_no = self:attempt_no() + 1 end
 
 -- ============================================================================== --
 
@@ -403,7 +410,7 @@ function bernadette_take()
         show_error("Invalid task #" .. queued_task[1] .. " found in queue") -- just in case
     end
 
-    return task:user_serialize_with_uid()
+    return task:user_serialize_with_uid_and_attempt_no()
 end
 
 --
@@ -417,15 +424,14 @@ function bernadette_release(user_id, msg_id, delay)
         return false
     end
 
-    local ok, ret = pcall(function(id)
-        queue.tube.bernadette:release(id, { delay = delay, })
-    end, task:id())
+    return bernadette_make_transaction(function (task, delay)
+        queue.tube.bernadette:release(task:id(), { delay = delay, })
 
-    if not ok then
-        show_error(ret)
-    end
+        task:inc_attempt_no()
+        box.space.relations:replace(task:serialize())
 
-    return true
+        return true
+    end, task, delay)
 end
 
 --
