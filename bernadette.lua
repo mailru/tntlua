@@ -238,6 +238,14 @@ function find_task_by_uidl(uid, uidl)
     return Task:new( box.space.relations.index.uid_uidl:get({ uid, uidl }) )
 end
 
+function select_user_tasks_impl(index, uid, msg_id)
+    local tasks = {}
+    for _, t in index:pairs({ uid, uidl }, { iterator = box.index.ALL, limit = MAX_TASKS }) do
+        table.insert(tasks, Task:new(t))
+    end
+    return tasks
+end
+
 -- Function will select all tasks of a specific user in the send_date order
 function select_user_tasks(uid, msg_id)
     local index = box.space.relations.index.uid
@@ -247,10 +255,9 @@ function select_user_tasks(uid, msg_id)
         msg_id = nil
     end
 
-    local ret = index:select({ uid, msg_id }, { limit = MAX_TASKS })
+    local ret = select_user_tasks_impl(index, uid, msg_id)
     for i = 1, #ret do
-        local t = Task:new(ret[i])
-        ret[i] = t:user_serialize()
+        ret[i] = ret[i]:user_serialize()
     end
 
     return unpack(ret)
@@ -384,9 +391,25 @@ function bernadette_delete_x(user_id, message_id, ignore_in_process)
         show_error("bernadette_delete: Invalid user_id or uidl")
     end
 
-    return bernadette_make_transaction(function (user_id, message_id, ignore_in_process)
-        return bernadette_delete_impl(user_id, message_id, ignore_in_process)
-    end, user_id, message_id, ignore_in_process)
+    return bernadette_make_transaction(bernadette_delete_impl, user_id, message_id, ignore_in_process)
+end
+
+function bernadette_delete_all_impl(user_id)
+    if user_id == nil or user_id == "" then
+        show_error("bernadette_peek: Invalid user_id")
+    end
+
+    local tasks = select_user_tasks_impl(box.space.relations.index.uid, user_id)
+    for i = 1, #tasks do
+        bernadette_delete_real(tasks[i])
+        tasks[i] = tasks[i]:user_serialize()
+    end
+
+    return tasks
+end
+
+function bernadette_delete_all(user_id)
+    return unpack(bernadette_make_transaction(bernadette_delete_all_impl, user_id))
 end
 
 function bernadette_delete(user_id, message_id)
@@ -457,6 +480,7 @@ box.schema.func.create('bernadette_peek', { if_not_exists = true })
 box.schema.func.create('bernadette_replace', { if_not_exists = true })
 box.schema.func.create('bernadette_delete', { if_not_exists = true })
 box.schema.func.create('bernadette_force_delete', { if_not_exists = true })
+box.schema.func.create('bernadette_delete_all', { if_not_exists = true })
 
 box.schema.func.create('bernadette_ack', { if_not_exists = true })
 box.schema.func.create('bernadette_take', { if_not_exists = true })
