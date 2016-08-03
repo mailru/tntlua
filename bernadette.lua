@@ -87,16 +87,16 @@ end
 ReplaceParams = {}
 function ReplaceParams:new(user_id, old_msg_id, new_msg_id, send_date, data)
     if user_id == nil or user_id == 0 then
-        show_error("bernadette_replace: user id is required")
+        show_error("user id is required")
     end
 
     if new_msg_id == nil or new_msg_id == "" then
-        show_error("bernadette_replace: invalid new_msg_id")
+        show_error("invalid new_msg_id")
     end
 
     local time = math.floor(fiber.time())
     if (send_date == nil) or (send_date < time) or (send_date > math.ceil(fiber:time()) + MAX_DELAY) then
-        log.warn("bernadette_replace: invalid send_date: " .. send_date .. ", at least " .. time .. " is required")
+        log.warn("invalid send_date: " .. send_date .. ", at least " .. time .. " is required")
         return render_error(ERR_INVALID_TIMESTAMP)
     end
 
@@ -174,11 +174,20 @@ function Task:serialize()
     return tuple
 end
 
+function if_nil(x, val)
+    -- if x then ... end
+    -- will fail (https://github.com/tarantool/tarantool/issues/1666)
+    if x == nil then
+        return val
+    end
+    return x
+end
+
 function Task:user_serialize()
     return {
         self:uidl(),
         self:send_date(),
-        self:data() or "",
+        if_nil(self:data(), ""),
     }
 end
 
@@ -187,7 +196,7 @@ function Task:user_serialize_with_uid_and_attempt_no()
         self:user_id(),
         self:uidl(),
         self:send_date(),
-        self:data() or "",
+        if_nil(self:data(), ""),
         self:attempt_no(),
     }
 end
