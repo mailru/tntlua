@@ -7,10 +7,15 @@ function ussender_add(user_id, sender_id)
     if #selected == 0 then
         box.insert(0, user_id, sender_id)
     else
-        for i=1, #selected[1]-1 do
-            local cur_id = box.unpack("l", selected[1][i])
-            if cur_id == sender_id then
-                return
+        local notfirst = false
+        for _, v in selected[1]:pairs(selected[1]) do
+            if notfirst then
+                local cur_id = box.unpack("l", v)
+                if cur_id == sender_id then
+                    return
+                end
+            else
+                notfirst = true
             end
         end
         box.update(0, user_id, "!p", -1, sender_id)
