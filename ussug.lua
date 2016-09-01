@@ -14,6 +14,6 @@ function ussug_get(...)
 end
 
 function ussug_insert(id, str)
-    id = box.unpack("l", id)
+    local id = box.unpack("l", id)
     box.replace(0, id, str)
 end
