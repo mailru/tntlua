@@ -442,7 +442,9 @@ function bernadette_take()
     local task = Task:new(box.space.relations.index.task_id:get({ queued_task[1] }))
     if not task:initialized() then
         log.error("Task with id " .. queued_task[1] .. " not found in relations space")
-        show_error("Invalid task #" .. queued_task[1] .. " found in queue") -- just in case
+        queue.tube.bernadette:ack(queued_task[1])
+
+        show_error("Invalid task #" .. queued_task[1] .. " found in queue, remove it from queue") -- just in case
     end
 
     return task:user_serialize_with_uid_and_attempt_no()
