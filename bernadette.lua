@@ -454,21 +454,24 @@ end
 -- Function releases task into queue by id.
 -- Function returns true if everything is OK, and false othewise.
 --
-function bernadette_release(user_id, msg_id, delay)
+function bernadette_release(user_id, msg_id, delay, skip_attempt_increment)
     local task = Task:new(box.space.relations.index.uid_uidl:get({ user_id, msg_id }))
     if not task:initialized() then
         -- Task can be deleted by anyone else
         return false
     end
 
-    return bernadette_make_transaction(function (task, delay)
+    return bernadette_make_transaction(function (task, delay, skip_attempt_increment)
         queue.tube.bernadette:release(task:id(), { delay = delay, })
 
-        task:inc_attempt_no()
+        if not skip_attempt_increment then
+            task:inc_attempt_no()
+        end
+
         box.space.relations:replace(task:serialize())
 
         return true
-    end, task, delay)
+    end, task, delay, skip_attempt_increment)
 end
 
 --
