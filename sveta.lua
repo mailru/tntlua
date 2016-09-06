@@ -72,6 +72,47 @@ function add_query(user_id, query)
     return tuple
 end
 
+function add_old_query(user_id, query, timestamp)
+    if string.len(query) > max_query_size then
+        error("too long query")
+    end
+    local uid = box.unpack('i', user_id)
+    local ts = box.unpack('i', timestamp)
+
+    if ts > box.time() then
+        error("unable to add query in future")
+    end
+
+    local days_ago = math.ceil(box.time()/seconds_per_day) - math.ceil(ts/seconds_per_day)
+
+    local tuple = box.select(space_no, 0, uid, query)
+
+    if tuple == nil then
+        local new_tuple = {}
+        new_tuple[index_of_user_id] = uid
+        new_tuple[index_of_query] = query
+        new_tuple[index_of_total_counter] = 1
+        new_tuple[index_of_last_ts] = ts
+        for i=index_of_latest_counter,index_of_earliest_counter do
+            new_tuple[i] = 0
+        end
+        if( days_ago < two_weeks ) then
+            new_tuple[index_of_2_week_counter] = 1
+            new_tuple[index_of_latest_counter + days_ago] = 1
+        end
+        return box.insert(space_no, new_tuple)
+    else
+        print(tuple[index_of_last_ts])
+        new_ts = math.max(ts, box.unpack('i', tuple[index_of_last_ts]))
+        if( days_ago < two_weeks ) then
+            return box.update(space_no, {uid, query}, "+p=p+p+p", index_of_total_counter, 1,index_of_last_ts, new_ts,
+                              index_of_2_week_counter, 1, index_of_latest_counter + days_ago, 1)
+        else
+            return box.update(space_no, {uid, query}, "+p=p", index_of_total_counter, 1, index_of_last_ts, new_ts)
+        end
+    end
+end
+
 function delete_query(user_id, query)
     return box.delete(space_no, box.unpack('i', user_id), query)
 end
