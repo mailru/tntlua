@@ -1,4 +1,9 @@
 -- sveta.lua
+-- implements aggregation of abstract data by update date and number of updates
+-- grouping by id and data
+-- allows desc sorting by date or by (2_week_count + total_count),
+-- where 2_week_count is number of updates for last two weeks,
+-- this updates automatically by fiber every 24 hours
 --
 --
 -- space[4].enabled = 1
@@ -76,7 +81,7 @@ function delete_all(user_id)
     while true do
         -- delete by chuncks of dalete_chunk len
         local tuples = {box.select_limit(space_no, 1, 0, delete_chunk, uid)}
-        if( table.getn(tuples) == 0 ) then
+        if( #tuples == 0 ) then
             break
         end
         for _, tuple in ipairs(tuples) do
@@ -86,10 +91,10 @@ function delete_all(user_id)
 end
 
 local function select_queries_by_index(uid, limit, index)
-    resp = {}
+    local resp = {}
     local i = 0
     for tuple in box.space[space_no].index[index]:iterator(box.index.REQ, uid) do
-        if i == lim then break end
+        if i == limit then break end
         table.insert(resp, {tuple[index_of_user_id], tuple[index_of_query], tuple[index_of_total_counter], tuple[index_of_last_ts], tuple[index_of_2_week_counter]})
         i = i + 1
     end
@@ -97,19 +102,19 @@ local function select_queries_by_index(uid, limit, index)
 end
 
 function select_recent(user_id, limit)
-    uid = box.unpack('i', user_id)
-    lim = box.unpack('i', limit)
-    return select_queries_by_index(uid, limit, 1)
+    local uid = box.unpack('i', user_id)
+    local lim = box.unpack('i', limit)
+    return select_queries_by_index(uid, lim, 1)
 end
 
 function select_2_week_popular(user_id, limit)
-    uid = box.unpack('i', user_id)
-    lim = box.unpack('i', limit)
-    return select_queries_by_index(uid, limit, 2)
+    local uid = box.unpack('i', user_id)
+    local lim = box.unpack('i', limit)
+    return select_queries_by_index(uid, lim, 2)
 end
 
 local function move_counters(tuple)
-    new_tuple = {}
+    local new_tuple = {}
     new_tuple[0] = box.unpack('i',tuple[0])
     new_tuple[1] = tuple[1]
     for i = 2,index_of_earliest_counter do
