@@ -248,11 +248,14 @@ function find_task_by_uidl(uid, uidl)
 end
 
 function select_user_tasks_impl(index, uid, msg_id)
-    local tasks = {}
-    for _, t in index:pairs({ uid, msg_id }, { iterator = box.index.ALL, limit = MAX_TASKS }) do
-        table.insert(tasks, Task:new(t))
+    local a, b, c = index:pairs({ uid, msg_id }, { iterator = box.index.EQ, limit = MAX_TASKS })
+    return function()
+        local _, tup = a(b, c)
+        if tup == nil then
+            return nil
+        end
+        return Task:new(tup)
     end
-    return tasks
 end
 
 -- Function will select all tasks of a specific user in the send_date order
@@ -264,9 +267,9 @@ function select_user_tasks(uid, msg_id)
         msg_id = nil
     end
 
-    local ret = select_user_tasks_impl(index, uid, msg_id)
-    for i = 1, #ret do
-        ret[i] = ret[i]:user_serialize()
+    local ret = {}
+    for x in select_user_tasks_impl(index, uid, msg_id) do
+        table.insert(ret, x:user_serialize())
     end
 
     return unpack(ret)
@@ -408,13 +411,18 @@ function bernadette_delete_all_impl(user_id)
         show_error("bernadette_peek: Invalid user_id")
     end
 
-    local tasks = select_user_tasks_impl(box.space.relations.index.uid, user_id)
-    for i = 1, #tasks do
-        bernadette_delete_real(tasks[i])
-        tasks[i] = tasks[i]:user_serialize()
+    local tasks = {}
+    local ret = {}
+    for task in select_user_tasks_impl(box.space.relations.index.uid, user_id) do
+        table.insert(tasks, task) -- can't delete task here: iterator will be modified
+        table.insert(ret, task:user_serialize())
     end
 
-    return tasks
+    for _, t in ipairs(tasks) do
+        bernadette_delete_real(t)
+    end
+
+    return ret
 end
 
 function bernadette_delete_all(user_id)
