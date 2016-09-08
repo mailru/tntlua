@@ -249,7 +249,7 @@ end
 
 function select_user_tasks_impl(index, uid, msg_id)
     local tasks = {}
-    for _, t in index:pairs({ uid, uidl }, { iterator = box.index.ALL, limit = MAX_TASKS }) do
+    for _, t in index:pairs({ uid, msg_id }, { iterator = box.index.ALL, limit = MAX_TASKS }) do
         table.insert(tasks, Task:new(t))
     end
     return tasks
