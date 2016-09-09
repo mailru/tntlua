@@ -42,7 +42,8 @@ function norepres_getold(time, limit)
 		if box.unpack('i', tuple[3]) < time then
 		    table.insert(ret, { tuple[0], tuple[1],
 		                    box.unpack('i', string.sub(tuple[2], 0, 4)),
-		                    box.unpack('i', string.sub(tuple[2], 5, 8)) })
+		                    box.unpack('i', string.sub(tuple[2], 5, 8)),
+		                    tuple[3] })
 		end
 	end
 	return unpack(ret)
