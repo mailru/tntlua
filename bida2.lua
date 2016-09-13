@@ -5,8 +5,7 @@
 --
 -- Space 0: simple birthday storage
 --   Tuple: { user_id (INT), date (INT) }
---   Index 0: HASH { user_id }
---   Index 1: TREE { date, user_id }
+--   Index 0: TREE { date, user_id }
 --
 
 local limit = 7000
@@ -25,7 +24,7 @@ function bida2_get_users_by_birthday(birthday, userid_offset)
 		...
 	That means, that select_range() function can return users with unexpected birthday => we should filter them out
 	--]]
-	local tuples = { box.select_range(0, 1, limit, birthday, userid_offset) }
+	local tuples = { box.select_range(0, 0, limit, birthday, userid_offset) }
 
 	local result = {}
 	for _, tuple in pairs(tuples) do
