@@ -265,6 +265,40 @@ function box.queue.take(sno, tube)
 	)
 end
 
+function box.queue.prolong(sno, id, ttr)
+	sno, id, ttr = tonumber(sno), tonumber64(id), tonumber(ttr)
+	if not box.queue.enabled[sno] then
+		error("Space " .. sno .. " queue not enabled")
+	end
+
+	if ttr == nil or ttr <= 0 then
+		error("Invalid ttr (" .. ttr .. ") specified (only positive values allowed)")
+	end
+
+	return box.update(sno, id, "=p", c_runat, box.time64() + ttr*1E6)
+end
+
+function box.queue.tube_select(sno, tube, offset, limit, ...)
+	sno, tube, offset, limit = tonumber(sno), tonumber(tube), tonumber(offset), tonumber(limit)
+	if not box.queue.enabled[sno] then
+		error("Space " .. sno .. " queue not enabled")
+	end
+
+	if tube == nil then
+		error("tube not specified")
+	end
+
+	if offset == nil or offset < 0 then
+		offset = 0
+	end
+
+	if limit == nil or limit <= 0 or limit > 2000 then
+		limit = 2000
+	end
+
+	return box.select_limit(sno, i_ready, offset, limit, tube, ...)
+end
+
 function box.queue.ack( sno, id )
 	sno, id = tonumber(sno), tonumber64(id)
 	local tuple = box.space[sno]:delete(id)
