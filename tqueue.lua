@@ -132,6 +132,7 @@ if box.queue == nil then
 	box.queue.enabled = {}
 	box.queue.stat = {}
 	box.queue.cnt = {}
+	box.queue.in_collect = -1
 else
 	local enabled = box.queue.enabled
 	local old = box.queue
@@ -139,6 +140,7 @@ else
 	box.queue.sequence = {}
 	box.queue.stat = old.stat
 	box.queue.cnt = old.cnt
+	box.queue.in_collect = old.in_collect
 	if enabled then
 		box.queue.enabled = enabled
 	else
@@ -167,7 +169,7 @@ local i_run     = 2
 function box.queue.cmd_counter(tube, cmd)
 	if box.queue.stat[tube] == nil then
 		-- box.queue.stat[tube] = { added = 0; deleted = 0; }
-		box.queue.stat[tube] = { added = 0; deleted = 0; ack = 0; release = 0; release_deleted = 0; delayed_ttl_exp_deleted = 0; ttl_exp_deleted = 0; ttr_exp_deleted = 0; }
+		box.queue.stat[tube] = { added = 0; deleted = 0; ack = 0; release = 0; release_deleted = 0; delayed_ttl_exp_deleted = 0; ttl_exp_deleted = 0; ttr_exp_deleted = 0; take = 0; limits = 0; }
 	end
 	box.queue.stat[tube][cmd] = box.queue.stat[tube][cmd] + 1
 end
@@ -202,6 +204,7 @@ function box.queue.put(sno, tube, limits, prio, delay, ttr, ttl, retry, ...)
 	local runat = 0ULL
 		
 	if box.queue.tube_stat(tube) >= limits then
+		box.queue.cmd_counter(tube, "limits" )
 		error("Limits reached")
 	end
 
@@ -233,7 +236,9 @@ function box.queue.put(sno, tube, limits, prio, delay, ttr, ttl, retry, ...)
 	box.queue.cnt_inc( tube )
 	box.queue.cmd_counter(tube, "added" )
 	local tuple = box.insert(sno, id, tube, prio, status, runat, ttr, ttl, retry,   ...)
-	return id
+	-- return tonumber64(id)
+	-- local tuple = box.insert(sno, id, tube, prio, status, runat, ttr, ttl, retry,   ...)
+	return tonumber64(id)
 end
 
 function box.queue.delete(sno, id)
@@ -254,7 +259,7 @@ function box.queue.take(sno, tube)
 	if tube == nil then tube = 0 end
 	local x,one_ready = box.space[sno].index[i_ready]:next_equal( tube,'R' )
 	if one_ready == nil then return end
-	
+	box.queue.cmd_counter(tube, "take" )
 	-- task may remain in status T for an amount of ttr microseconds. so, put time + ttr into runat
 	return box.update(
 		sno, one_ready[0],
@@ -366,14 +371,38 @@ function box.queue.release( sno, id, prio, delay, ttr, ttl, retry )
 	end
 end
 
+
+
+
+-- box.fiber.wrap(function()
+	-- while true
+		-- local r,e = pcall(function ()
+			-- ... your code
+			
+		-- end)
+		-- if not r then
+			-- print("error in code"..e)
+		-- end
+	-- end
+
+-- end)
+
 function box.queue.collect(sno)
 	sno = tonumber(sno)
 	if not box.queue.enabled[sno] then error("Space ".. sno .. " queue not enabled") end
 	local idx = box.space[sno].index[i_run]
 	
+	box.queue.in_collect = 0;
 	do
+		local c = 0;
 		local it,tuple
 		while true do
+			c = c+1;
+			if c%1000 == 0 then
+				if( c > 50000) then print( "Big count for collect: "..c) end
+				box.queue.in_collect = c;
+				box.fiber.sleep(0);
+			end
 			it,tuple = idx:next(it)
 			if it == nil then break end
 			local runat = box.unpack('l',tuple[c_runat])
@@ -427,7 +456,9 @@ function box.queue.collect(sno)
 			end
 		end
 	end
-	return
+	
+	box.queue.in_collect = -1;
+	
 end
 
 local function queue_watcher(sno)
@@ -436,7 +467,10 @@ local function queue_watcher(sno)
 	box.fiber.name("box.queue.watcher["..sno.."]")
 	print("Starting queue watcher for space "..sno)
 	while true do
-		box.queue.collect(sno)
+		if box.cfg.replication_source == nil then
+			local r,e = pcall(box.queue.collect,sno)
+			if not r then print("collect died: "..e) end
+		end
 		box.fiber.sleep(1.0)
 	end
 end
@@ -507,6 +541,8 @@ function box.queue.cmd_stat()
 		local delayed_ttl_exp_deleted = cnt["delayed_ttl_exp_deleted"]
 		local ttl_exp_deleted = cnt["ttl_exp_deleted"]
 		local ttr_exp_deleted = cnt["ttr_exp_deleted"]
+		local take = cnt["take"]
+		local limits = cnt["limits"]
 		if added == nil then added = 0 end
 		if ack == nil then ack = 0 end
 		if deleted == nil then deleted = 0 end
@@ -515,8 +551,11 @@ function box.queue.cmd_stat()
 		if delayed_ttl_exp_deleted == nil then delayed_ttl_exp_deleted = 0 end
 		if ttl_exp_deleted == nil then ttl_exp_deleted = 0 end
 		if ttr_exp_deleted == nil then ttr_exp_deleted = 0 end
+		if take == nil then take = 0 end
+		if limits == nil then limits = 0 end
 		-- print('tube:', tonumber(tube), ' added', added, ' deleted',deleted, ' ack',ack, ' release',release, ' release_deleted',release_deleted, ' delayed_ttl_exp_deleted',delayed_ttl_exp_deleted, ' ttl_exp_deleted',ttl_exp_deleted, ' ttr_exp_deleted',ttr_exp_deleted);
-		table.insert(stats, box.tuple.new({tonumber(tube), added, deleted, ack, release, release_deleted, delayed_ttl_exp_deleted, ttl_exp_deleted, ttr_exp_deleted }) )
+		-- table.insert(stats, box.tuple.new({tonumber(tube), added, deleted }) )
+		table.insert(stats, box.tuple.new({tonumber(tube), added, deleted, ack, release, release_deleted, delayed_ttl_exp_deleted, ttl_exp_deleted, ttr_exp_deleted, take, limits }) )
 	end
 	box.queue.stat = {} -- reset stats
 	return stats
