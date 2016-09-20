@@ -281,8 +281,18 @@ local function move_and_delete_fiber()
     end
 end
 
-box.fiber.wrap(move_and_delete_fiber)
+if sveta_started_fibers ~= nil then
+    for _, fid in pairs(sveta_started_fibers) do
+        box.fiber.kill(fid)
+    end
+end
+
+sveta_started_fibers = {}
+local fiber = box.fiber.wrap(move_and_delete_fiber)
+table.insert(sveta_started_fibers, box.fiber.id(fiber))
 for i = 1, n_fibers do
-    box.fiber.wrap(move_counters_fiber)
-    box.fiber.wrap(delete_old_queries_fiber)
+    fiber = box.fiber.wrap(move_counters_fiber)
+    table.insert(sveta_started_fibers, box.fiber.id(fiber))
+    fiber = box.fiber.wrap(delete_old_queries_fiber)
+    table.insert(sveta_started_fibers, box.fiber.id(fiber))
 end
