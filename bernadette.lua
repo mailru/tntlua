@@ -184,7 +184,7 @@ function if_nil(x, val)
 end
 
 function Task:user_serialize()
-    return {
+    return box.tuple.new{
         self:uidl(),
         self:send_date(),
         if_nil(self:data(), ""),
@@ -192,7 +192,7 @@ function Task:user_serialize()
 end
 
 function Task:user_serialize_with_uid_and_attempt_no()
-    return {
+    return box.tuple.new{
         self:user_id(),
         self:uidl(),
         self:send_date(),
@@ -272,7 +272,11 @@ function select_user_tasks(uid, msg_id)
         table.insert(ret, x:user_serialize())
     end
 
-    return unpack(ret)
+    if ret[1] == nil then
+        -- Tarantool 1.6 have a bug: it can't correctly pack empty table
+        return nil
+    end
+    return ret
 end
 
 function bernadette_delete_real(task)
@@ -422,6 +426,10 @@ function bernadette_delete_all_impl(user_id)
         bernadette_delete_real(t)
     end
 
+    if ret[1] == nil then
+        -- Tarantool 1.6 have a bug: it can't correctly pack empty table
+        return
+    end
     return ret
 end
 
