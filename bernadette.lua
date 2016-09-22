@@ -31,6 +31,9 @@ TAKE_TIMEOUT = 30
 -- maximum task delay time
 MAX_DELAY = 2 * 365 * 24 * 60 * 60 -- 2 years
 
+STAT_ENABLED = true
+STAT_TIME_ACCURACY = 60 * 60 -- 60 minutes
+
 -- ============================================================================== --
 
 local FIELD_UID = 1
@@ -73,6 +76,17 @@ box.once('bernadette_init', function ()
         type = 'TREE',
         parts = { FIELD_UID, 'NUM', FIELD_SEND_DATE, 'NUM' },
         unique = false,
+    })
+end)
+
+box.once('bernadette_init_statistics', function ()
+    local queue_stat = box.schema.space.create('queue_stat')
+
+    -- { timestamp } => n_tasks
+    queue_stat:create_index('primary', {
+        type = 'TREE',
+        parts = { 1, 'NUM' },
+        unique = true,
     })
 end)
 
@@ -328,7 +342,7 @@ end
 
 function bernadette_replace_impl(params)
     -- this function should be wrapped with transaction
-    local existed_task
+    local existed_task = nil
     if params:old_uidl() then
         existed_task = find_task_by_uidl(params:uid(), params:old_uidl())
         if not existed_task:initialized() then
@@ -350,6 +364,13 @@ function bernadette_replace_impl(params)
     local existed_tasks = box.space.relations.index.uid:count(params:uid())
     if existed_tasks >= MAX_TASKS then
         return render_error(ERR_TOO_MANY_TASKS)
+    end
+
+    if STAT_ENABLED and existed_task == nil then
+        local existed_new_task = find_task_by_uidl(params:uid(), params:new_uidl())
+        if not existed_new_task:initialized() then
+            bernadette_update_statistics(params:send_date())
+        end
     end
 
     bernadette_put_real(params)
@@ -506,6 +527,21 @@ function bernadette_ack(user_id, msg_id)
     end, task:id())
 end
 
+function bernadette_update_statistics(timestamp)
+    timestamp = timestamp - (timestamp % STAT_TIME_ACCURACY)
+    if box.space.queue_stat:update({ timestamp }, {{ '+', 2, 1 }}) == nil then
+        box.space.queue_stat:insert({ timestamp, 1 })
+    end
+end
+
+function bernadette_get_statistics()
+    local tuples = box.space.queue_stat.index.primary:select(nil, { limit = 1000 })
+    for _, v in ipairs(tuples) do
+        box.space.queue_stat:delete({ v[1] })
+    end
+    return tuples
+end
+
 box.schema.func.create('bernadette_peek', { if_not_exists = true })
 box.schema.func.create('bernadette_replace', { if_not_exists = true })
 box.schema.func.create('bernadette_delete', { if_not_exists = true })
@@ -515,3 +551,4 @@ box.schema.func.create('bernadette_delete_all', { if_not_exists = true })
 box.schema.func.create('bernadette_ack', { if_not_exists = true })
 box.schema.func.create('bernadette_take', { if_not_exists = true })
 box.schema.func.create('bernadette_release', { if_not_exists = true })
+box.schema.func.create('bernadette_get_statistics', { if_not_exists = true })
