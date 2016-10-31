@@ -27,6 +27,14 @@
 -- space[4].index[2].key_field[1].type = "NUM"
 -- space[4].index[2].key_field[2].fieldno = 2
 -- space[4].index[2].key_field[2].type = "NUM"
+-- space[4].index[3].type = "AVLTREE"
+-- space[4].index[3].unique = 1
+-- space[4].index[3].key_field[0].fieldno = 3
+-- space[4].index[3].key_field[0].type = "NUM"
+-- space[4].index[3].key_field[1].fieldno = 0
+-- space[4].index[3].key_field[1].type = "NUM"
+-- space[4].index[3].key_field[2].fieldno = 1
+-- space[4].index[3].key_field[2].type = "STR"
 --
 -- tuple structure:
 -- uid, query, total_count, last_ts, 2_week_count, latest_counter(today), ... , earliest_counter(2 weeks ago)
@@ -44,8 +52,14 @@ local index_of_2_week_counter = 4
 local index_of_latest_counter = 5
 local index_of_earliest_counter = 18
 
+local old_query_days = 60
+
 local timeout = 0.005
 local max_attempts = 5
+
+local n_fibers = 10
+local move_channel = box.ipc.channel(n_fibers)
+local delete_channel = box.ipc.channel(n_fibers)
 
 function add_query(user_id, query)
     if string.len(query) > max_query_size then
@@ -102,7 +116,6 @@ function add_old_query(user_id, query, timestamp)
         end
         return box.insert(space_no, new_tuple)
     else
-        print(tuple[index_of_last_ts])
         new_ts = math.max(ts, box.unpack('i', tuple[index_of_last_ts]))
         if( days_ago < two_weeks ) then
             return box.update(space_no, {uid, query}, "+p=p+p+p", index_of_total_counter, 1,index_of_last_ts, new_ts,
@@ -156,58 +169,130 @@ end
 
 local function move_counters(tuple)
     local new_tuple = {}
-    new_tuple[0] = box.unpack('i',tuple[0])
-    new_tuple[1] = tuple[1]
-    for i = 2,index_of_earliest_counter do
-        new_tuple[i] = box.unpack('i',tuple[i])
+    for i = index_of_user_id,index_of_2_week_counter do
+        new_tuple[i] = tuple[i]
     end
-    new_tuple[index_of_2_week_counter] = new_tuple[index_of_2_week_counter] - new_tuple[index_of_earliest_counter]
-    for i=index_of_earliest_counter,index_of_latest_counter+1,-1 do
-        new_tuple[i] = new_tuple[i - 1]
+    new_tuple[index_of_latest_counter] = box.pack('i', 0)
+    for i=index_of_latest_counter+1,index_of_earliest_counter do
+        new_tuple[i] = tuple[i - 1]
     end
-    new_tuple[index_of_latest_counter] = 0
+    new_tuple[index_of_2_week_counter] = box.pack('i', box.unpack('i', new_tuple[index_of_2_week_counter]) - box.unpack('i', tuple[index_of_earliest_counter]))
+
     return box.replace(space_no, new_tuple)
+end
+
+local function move_counters_fiber()
+    local tpl = move_channel:get()
+    while true do
+        local count = 0
+        local status, result = pcall(move_counters, tpl)
+        if status then
+        --success
+           tpl = move_channel:get()
+        else
+        --exception
+            count = count + 1
+            if count == max_attempts then
+                print('max attempts reached for moving counters for user ', tpl[0], ' query ', tpl[1])
+                tpl = move_channel:get()
+            else
+                box.fiber.sleep(timeout)
+            end
+        end
+    end
+end
+
+local function delete_old_queries_fiber()
+    local tpl = delete_channel:get()
+    while true do
+        local count = 0
+        local status, result = pcall(box.delete, space_no, tpl[0], tpl[1])
+        if status then
+        --success
+           tpl = delete_channel:get()
+        else
+        --exception
+            count = count + 1
+            if count == max_attempts then
+                print('max attempts reached for deleting query for user ', tpl[0], ' query ', tpl[1])
+                tpl = delete_channel:get()
+            else
+                box.fiber.sleep(timeout)
+            end
+        end
+    end
 end
 
 local function move_all_counters()
     local n = 0
     print('start moving counters')
     local start_time = box.time()
-    for t in box.space[space_no].index[0]:iterator(box.index.ALL) do
-        local count = 0
-        while true do
-            local status, result = pcall(move_counters, t)
-            if status then
-                --success
-                break
-            else
-            --exception
-                count = count + 1
-                if count == max_attempts then
-                    print('max attempts reached for moving counters for user ', t[0], ' query ', t[1])
-                    break
-                end
-                box.fiber.sleep(timeout)
+    local tuples = {box.select_range(space_no, 3, n_fibers, box.time() - (two_weeks + 1) * seconds_per_day)}
+    local last_tuple = nil
+    while true do
+        if #tuples == 0 then
+            break
+        end
+        for _, t in pairs(tuples) do
+            move_channel:put(t)
+            n = n + 1
+            if n % 1000 == 0 then
+                box.fiber.sleep(0)
             end
+            last_tuple = t
         end
-
-        n = n + 1
-        if n == 100 then
-            box.fiber.sleep(timeout)
-            n = 0
-        end
+        tuples = {box.select_range(space_no, 3, n_fibers, last_tuple[index_of_last_ts], last_tuple[index_of_user_id], last_tuple[index_of_query])}
+        tuples[1] = nil
     end
-    print('finish moving counters. elapsed ', box.time() - start_time, ' seconds')
+    print('finish moving counters. elapsed ', box.time() - start_time, ' seconds moved ', n, ' tuples')
 end
 
-local function move_all_counters_fiber()
+local function delete_old_queries()
+    local n = 0
+    print('start delete old queries')
+    local start_time = box.time()
+    local tuples = {box.select_reverse_range(space_no, 3, n_fibers, box.time() - old_query_days * seconds_per_day)}
+    local last_tuple = nil
+    while true do
+        if #tuples == 0 then
+            break
+        end
+        for _, t in pairs(tuples) do
+            delete_channel:put(t)
+            n = n + 1
+            if n % 1000 == 0 then
+                box.fiber.sleep(0)
+            end
+            last_tuple = t
+        end
+        tuples = {box.select_reverse_range(space_no, 3, n_fibers, last_tuple[index_of_last_ts], last_tuple[index_of_user_id], last_tuple[index_of_query])}
+    end
+    print('finish delete old queries. elapsed ', box.time() - start_time, ' seconds, ', n, ' delete requests')
+end
+
+local function move_and_delete_fiber()
     while true do
         local time = box.time()
         local sleep_time = math.ceil(time/seconds_per_day)*seconds_per_day - time + 1
-        print('sleep for ', sleep_time, ' seconds')
+        print('move_and_delete_fiber: sleep for ', sleep_time, ' seconds')
         box.fiber.sleep(sleep_time)
         move_all_counters()
+        delete_old_queries()
     end
 end
 
-box.fiber.wrap(move_all_counters_fiber)
+if sveta_started_fibers ~= nil then
+    for _, fid in pairs(sveta_started_fibers) do
+        box.fiber.kill(fid)
+    end
+end
+
+sveta_started_fibers = {}
+local fiber = box.fiber.wrap(move_and_delete_fiber)
+table.insert(sveta_started_fibers, box.fiber.id(fiber))
+for i = 1, n_fibers do
+    fiber = box.fiber.wrap(move_counters_fiber)
+    table.insert(sveta_started_fibers, box.fiber.id(fiber))
+    fiber = box.fiber.wrap(delete_old_queries_fiber)
+    table.insert(sveta_started_fibers, box.fiber.id(fiber))
+end
