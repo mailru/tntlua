@@ -486,3 +486,19 @@ function profile_print_specific_str_int_key_bit(key_id, bit_n)
         bit_n
     )
 end
+
+function profile_print_bigger_than(size_in_bytes)
+    local cnt = 0
+
+    for tpl in box.space[space_no].index[0]:iterator(box.index.ALL) do
+        if tpl:bsize() > size_in_bytes then
+            print("user_id: ", profile_id_to_int(tpl[0]), " size: ", tpl:bsize())
+        end
+
+        cnt = cnt + 1
+        if cnt == 1000 then
+            box.fiber.sleep(0)
+            cnt = 0
+        end
+    end
+end
