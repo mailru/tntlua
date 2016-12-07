@@ -35,3 +35,12 @@ function bida2_get_users_by_birthday(birthday, userid_offset)
 
 	return unpack(result)
 end
+
+function bida2_delete_user(userid)
+	userid = box.unpack('i', userid)
+	local tuples, tuple
+	tuples = { box.select(0, 1, userid) }
+	for _, tuple in pairs(tuples) do
+		box.delete(0, tuple[1], tuple[0])
+	end
+end
