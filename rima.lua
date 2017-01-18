@@ -15,15 +15,17 @@
 --
 
 --
--- Space 0: Remote IMAP Collector Task Queue
+-- Space 0: Task Queue (task's data)
 --   Tuple: { task_id (NUM64), key (STR), task_description (NUM), add_time (NUM) }
 --   Index 0: TREE { task_id }
 --   Index 1: TREE { key, task_id }
 --
--- Space 2: Task Priority
---   Tuple: { key (STR), priority (NUM), is_locked (NUM), lock_time (NUM), lock_source (STR) }
+-- Space 2: Task Queue (with priority, locks e.t.c.)
+--   Tuple: { key (STR), priority (NUM), is_locked (NUM), lock_time (NUM), lock_source (STR), serial_num (NUM) }
 --   Index 0: TREE { key }
 --   Index 1: TREE { priority, is_locked, lock_time }
+--   Index 2: TREE { priority, is_locked, serial_num }
+--   Index 3: TREE { serial_num }
 --
 -- Space 3: Mail Fetcher Queue (Special queue for fast single message loading)
 --   Tuple: { task_id (NUM64), key (STR), task_description (NUM), add_time (NUM) }
@@ -32,128 +34,167 @@
 --
 
 local EXPIRATION_TIME = 30 * 60 -- seconds
+local TASKS_BATCH = 1000
+local FAST_TASKS_BATCH = 1000
+
+local function next_queue_id()
+    local next_id = 1
+    local max_id = box.space[2].index[3]:max()
+
+    if max_id ~= nil then
+        next_id = box.unpack('i', max_id[5]) + 1
+    end
+
+    return next_id
+end
+
+--
+-- Insert task data into the queue
+--
+local function insert_task_data(key, data, new_prio, ts, old_prio)
+
+    local first_task = box.select_limit(0, 1, 0, 1, key)
+    if first_task == nil then
+        box.auto_increment(0, key, data, ts)
+    else
+        if old_prio == 0 and new_prio == old_prio then
+            -- optimisation: no need another task
+        else
+            box.auto_increment(0, key, data, ts)
+        end
+    end
+end
 
 --
 -- Put task to the queue.
 --
 local function rima_put_impl(key, data, prio, ts)
-	-- insert task data into the queue
-	box.auto_increment(0, key, data, ts)
-	-- increase priority of the key
-	local pr = box.select_limit(2, 0, 0, 1, key)
-	if pr == nil then
-		box.insert(2, key, prio, 0, box.time())
-	elseif box.unpack('i', pr[1]) < prio then
-		box.update(2, key, "=p", 1, prio)
-	end
-	return 1
+    local pr = box.select_limit(2, 0, 0, 1, key)
+
+    local old_prio = -3
+    if pr ~= nil then old_prio = box.unpack('i', pr[1]) end
+
+    -- first: insert task data
+    insert_task_data(key, data, prio, ts, old_prio)
+
+    -- second: insert key into queue
+    if pr == nil then
+        box.insert(2, key, prio, 0, box.time(), '', next_queue_id())
+    elseif box.unpack('i', pr[1]) < prio then
+        box.update(2, key, "=p", 1, prio)
+    else
+    end
+
+    return 1
 end
 
 function rima_put(key, data) -- deprecated
-	rima_put_impl(key, data, 512, box.time())
+    rima_put_impl(key, data, 512, box.time())
 end
 
 function rima_put_with_prio(key, data, prio)
-	prio = box.unpack('i', prio)
+    prio = box.unpack('i', prio)
 
-	rima_put_impl(key, data, prio, box.time())
+    rima_put_impl(key, data, prio, box.time())
 end
 
 function rima_put_with_prio_and_ts(key, data, prio, ts)
-	prio = box.unpack('i', prio)
-	ts = box.unpack('i', ts)
+    prio = box.unpack('i', prio)
+    ts = box.unpack('i', ts)
 
-	rima_put_impl(key, data, prio, ts)
+    rima_put_impl(key, data, prio, ts)
 end
 
 function rima_put_sync(key, data, prio)
-	prio = box.unpack('i', prio)
+    prio = box.unpack('i', prio)
 
-	return rima_put_impl(key, data, prio, box.time())
+    return rima_put_impl(key, data, prio, box.time())
 end
 
 --
 -- Put fetch single mail task to the queue.
 --
 function rima_put_fetchmail(key, data)
-	box.auto_increment(3, key, data, box.time())
+    box.auto_increment(3, key, data, box.time())
 end
 
-local function get_prio_key(prio, source)
-	local v = box.select_limit(2, 1, 0, 1, prio, 0)
-	if v == nil then return nil end
+local function get_prio_key_with_lock(prio, source)
+    local v = box.select_limit(2, 2, 0, 1, prio, 0)
+    if v == nil then return nil end
 
-	if source == nil then source = "" end
+    if source == nil then source = "" end
 
-	-- lock the key
-	local key = v[0]
-	box.update(2, key, "=p=p=p", 2, 1, 3, box.time(), 4, source)
+    -- lock the key
+    local key = v[0]
+    box.update(2, key, "=p=p=p", 2, 1, 3, box.time(), 4, source)
 
-	return key
+    return key
 end
 
 local function get_key_data(key)
-	local result = { key }
+    local result = { key }
 
-	local tuples = { box.select_limit(0, 1, 0, 1000, key) }
-	for _, tuple in pairs(tuples) do
-		tuple = box.delete(0, box.unpack('l', tuple[0]))
-		if tuple ~= nil then
-			table.insert(result, { box.unpack('i', tuple[3]), tuple[2] } )
-		end
-	end
+    local tuples = { box.select_limit(0, 1, 0, TASKS_BATCH, key) }
+    for _, tuple in pairs(tuples) do
+        tuple = box.delete(0, box.unpack('l', tuple[0]))
+        if tuple ~= nil then
+            table.insert(result, { box.unpack('i', tuple[3]), tuple[2] } )
+        end
+    end
 
-	return result
+    return result
 end
 
 --
 -- Request tasks from the queue.
 --
 function rima_get_ex(prio, source)
-	prio = box.unpack('i', prio)
+    prio = box.unpack('i', prio)
 
-	local key = get_prio_key(prio, source)
-	if key == nil then return end
-	return unpack(get_key_data(key))
+    local key = get_prio_key_with_lock(prio, source)
+    if key == nil then return end
+    return unpack(get_key_data(key))
 end
 
 --
 -- Request fetch single mail tasks from the queue.
 --
 function rima_get_fetchmail()
-	local tuple = box.select_range(3, 0, 1)
-	if tuple == nil then return end
+    local tuple = box.select_range(3, 0, 1)
+    if tuple == nil then return end
 
-	local key = tuple[1]
+    local key = tuple[1]
 
-	local result = {}
-	local n = 0
+    local result = {}
+    local n = 0
 
-	local tuples = { box.select_limit(3, 1, 0, 1000, key) }
-	for _, tuple in pairs(tuples) do
-		tuple = box.delete(3, box.unpack('l', tuple[0]))
-		if tuple ~= nil then
-			table.insert(result, { box.unpack('i', tuple[3]), tuple[2] })
-			n = 1
-		end
-	end
+    local tuples = { box.select_limit(3, 1, 0, FAST_TASKS_BATCH, key) }
+    for _, tuple in pairs(tuples) do
+        tuple = box.delete(3, box.unpack('l', tuple[0]))
+        if tuple ~= nil then
+            table.insert(result, { box.unpack('i', tuple[3]), tuple[2] })
+            n = 1
+        end
+    end
 
-	if n == 0 then return end
-	return key, unpack(result)
+    if n == 0 then return end
+    return key, unpack(result)
 end
 
 --
 -- Request tasks from the queue for concrete user.
 --
 function rima_get_user_tasks(key, source)
-	local lock_acquired = rima_lock(key, source)
-	if lock_acquired == 0 then
-		local pr = box.select_limit(2, 0, 0, 1, key)
-		if pr[4] ~= source and source ~= "force_run" then return end
-		lock_acquired = 1
-	end
+    local lock_acquired = rima_lock(key, source)
+    if lock_acquired == 0 then
+        local pr = box.select_limit(2, 0, 0, 1, key)
+        if pr[4] ~= source and source ~= "force_run" then
+            return
+        end
+        lock_acquired = 1
+    end
 
-	return unpack(get_key_data(key))
+    return unpack(get_key_data(key))
 end
 
 --
@@ -162,38 +203,41 @@ end
 -- In case of non-zero @unlock_delay user unlock is defered for @unlock_delay seconds (at least).
 --
 function rima_done(key, unlock_delay)
-	if unlock_delay ~= nil then unlock_delay = box.unpack('i', unlock_delay) end
+    if unlock_delay ~= nil then unlock_delay = box.unpack('i', unlock_delay) end
 
-	local pr = box.select_limit(2, 0, 0, 1, key)
-	if pr == nil then return end
+    local pr = box.select_limit(2, 0, 0, 1, key)
+    if pr == nil then return end
 
-	if unlock_delay ~= nil and unlock_delay > 0 then
-		box.update(2, key, "=p=p", 2, 1, 3, box.time() - EXPIRATION_TIME + unlock_delay)
-	elseif box.select_limit(0, 1, 0, 1, key) == nil then
-		-- no tasks for this key in the queue
-		box.delete(2, key)
-	else
-		box.update(2, key, "=p=p", 2, 0, 3, box.time())
-	end
+    if unlock_delay ~= nil and unlock_delay > 0 then
+        box.update(2, key, "=p=p", 2, 1, 3, box.time() - EXPIRATION_TIME + unlock_delay)
+    elseif box.select_limit(0, 1, 0, 1, key) == nil then
+        -- no tasks for this key in the queue
+        box.delete(2, key)
+    else
+        box.update(2, key, "=p=p", 2, 0, 3, box.time())
+    end
 end
 
 --
 -- Explicitly lock tasks for the key.
 --
 function rima_lock(key, source)
-	local pr = box.select_limit(2, 0, 0, 1, key)
-	if pr ~= nil and box.unpack('i', pr[2]) > 0 then return 0 end
+    local pr = box.select_limit(2, 0, 0, 1, key)
+    if pr ~= nil and box.unpack('i', pr[2]) > 0 then
+        -- already locked, pr[2] - is_locked
+        return 0
+    end
 
-	if source == nil then source = "" end
+    if source == nil then source = "" end
 
-	-- lock the key
-	if pr ~= nil then
-		box.update(2, key, "=p=p=p", 2, 1, 3, box.time(), 4, source)
-	else
-		box.insert(2, key, 0, 1, box.time(), source)
-	end
+    -- lock the key
+    if pr ~= nil then
+        box.update(2, key, "=p=p=p", 2, 1, 3, box.time(), 4, source)
+    else
+        box.insert(2, key, 0, 1, box.time(), source, next_queue_id())
+    end
 
-	return 1
+    return 1
 end
 
 --
@@ -201,25 +245,25 @@ end
 --
 
 function rima_delete_user(email)
-	local something_deleted = 0
-	repeat
-		something_deleted = 0
+    local something_deleted = 0
+    repeat
+        something_deleted = 0
 
-		local tuple = box.delete(2, email)
-		if tuple ~= nil then something_deleted = 1 end
+        local tuple = box.delete(2, email)
+        if tuple ~= nil then something_deleted = 1 end
 
-		local tuples = { box.select_limit(3, 1, 0, 1000, email) }
-		for _, tuple in pairs(tuples) do
-			tuple = box.delete(3, box.unpack('l', tuple[0]))
-			something_deleted = 1
-		end
+        local tuples = { box.select_limit(3, 1, 0, 1000, email) }
+        for _, tuple in pairs(tuples) do
+            tuple = box.delete(3, box.unpack('l', tuple[0]))
+            something_deleted = 1
+        end
 
-		tuples = { box.select_limit(0, 1, 0, 1000, email) }
-		for _, tuple in pairs(tuples) do
-			tuple = box.delete(0, box.unpack('l', tuple[0]))
-			something_deleted = 1
-		end
-	until something_deleted == 0
+        tuples = { box.select_limit(0, 1, 0, 1000, email) }
+        for _, tuple in pairs(tuples) do
+            tuple = box.delete(0, box.unpack('l', tuple[0]))
+            something_deleted = 1
+        end
+    until something_deleted == 0
 end
 
 --
@@ -227,21 +271,21 @@ end
 --
 
 local function is_expired(args, tuple)
-	if tuple == nil or #tuple <= args.fieldno then
-		return nil
-	end
+    if tuple == nil or #tuple <= args.fieldno then
+        return nil
+    end
 
-	-- expire only locked keys
-	if box.unpack('i', tuple[2]) == 0 then return false end
+    -- expire only locked keys
+    if box.unpack('i', tuple[2]) == 0 then return false end
 
-	local field = tuple[args.fieldno]
-	local current_time = box.time()
-	local tuple_expire_time = box.unpack('i', field) + args.expiration_time
-	return current_time >= tuple_expire_time
+    local field = tuple[args.fieldno]
+    local current_time = box.time()
+    local tuple_expire_time = box.unpack('i', field) + args.expiration_time
+    return current_time >= tuple_expire_time
 end
 
 local function delete_expired(spaceno, args, tuple)
-	rima_done(tuple[0])
+    rima_done(tuple[0])
 end
 
 dofile('expirationd.lua')
