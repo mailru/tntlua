@@ -51,14 +51,14 @@ end
 --
 -- Insert task data into the queue
 --
-local function insert_task_data(key, data, new_prio, ts, old_prio)
+local function insert_task_data(key, data, new_prio, ts)
 
     local first_task = box.select_limit(0, 1, 0, 1, key)
     if first_task == nil then
         box.auto_increment(0, key, data, ts)
     else
-        if old_prio == 0 and new_prio == old_prio then
-            -- optimisation: no need another task
+        if new_prio == 0 and data == first_task[2] then
+            -- optimisation: no need another same task
         else
             box.auto_increment(0, key, data, ts)
         end
@@ -69,15 +69,11 @@ end
 -- Put task to the queue.
 --
 local function rima_put_impl(key, data, prio, ts)
-    local pr = box.select_limit(2, 0, 0, 1, key)
-
-    local old_prio = -3
-    if pr ~= nil then old_prio = box.unpack('i', pr[1]) end
-
     -- first: insert task data
-    insert_task_data(key, data, prio, ts, old_prio)
+    insert_task_data(key, data, prio, ts)
 
-    -- second: insert key into queue
+    -- second: insert or update key into queue
+    local pr = box.select_limit(2, 0, 0, 1, key)
     if pr == nil then
         box.insert(2, key, prio, 0, box.time(), '', next_queue_id())
     elseif box.unpack('i', pr[1]) < prio then
