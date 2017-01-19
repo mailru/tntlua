@@ -149,7 +149,15 @@ function rima_get_ex(prio, source)
 
     local key = get_prio_key_with_lock(prio, source)
     if key == nil then return end
-    return unpack(get_key_data(key))
+
+    local tasks = get_key_data(key)
+    if table.getn(tasks) == 1 then
+        -- if only email in table, it means there are no tasks
+        rima_done(key)
+        return
+    end
+
+    return unpack(tasks)
 end
 
 --
