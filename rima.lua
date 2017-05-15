@@ -45,6 +45,15 @@ local function next_queue_id()
         next_id = box.unpack('i', max_id[5]) + 1
     end
 
+    -- Tarantool field is only int32 :(, so it is defense from overflow
+    -- Overflow happens in case, where workers can't so fast do the tasks
+    -- We don't lose any tasks, because tasks data places into space[0]
+    if next_id >= 2^32 then
+        print("too big serrial, truncate space[2]")
+        box.space[2]:truncate()
+        next_id = 1
+    end
+
     return next_id
 end
 
