@@ -68,6 +68,7 @@ local function send_to_proscribe(uid, profile_key, old_value, new_value)
 	for _, v in ipairs(keys_to_proscribe) do
 		if v == profile_key then
 			fit = true
+                        break
 		end
 	end
 	if not fit then
