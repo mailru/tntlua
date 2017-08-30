@@ -142,6 +142,7 @@ end
 -- function profile_delete delete profile. Returns nothing
 function profile_delete(user_id)
 	box.space.profile:delete(user_id)
+        return cast_profile_to_return_format(create_new_profile(user_id))
 end
 
 -- function profile_get_all returns full profile
